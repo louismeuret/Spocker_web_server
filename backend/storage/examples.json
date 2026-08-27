@@ -1,0 +1,18 @@
+{
+  "_comment": "Curated example jobs for the input page's Examples pane. See app/examples.py. Job UUIDs are specific to this server's storage/jobs/ -- entries whose jobs are missing or unfinished are dropped from the API response, so it is safe to leave stale ones here.",
+  "calculations": [
+    {
+      "job_id": "f6f922b410824220b770f7a8d5d783e8",
+      "title": "1AJU",
+      "description": "HIV-1 TAR RNA, 30 nucleotides in a single chain. A small, fast structure -- a good first look at what the pipeline outputs."
+    }
+  ],
+  "comparisons": [
+    {
+      "job_a": "22667e4c4641498b911c81b4c6e3a575",
+      "job_b": "b7a97cb8a8ab4fe0959a58be44371f2d",
+      "title": "2ESI vs 2ESJ",
+      "description": "Differences in a 16S-RNA A binding Kanamycin A and Lividomycin A."
+    }
+  ]
+}
