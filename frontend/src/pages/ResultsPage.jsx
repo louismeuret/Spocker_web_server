@@ -4,6 +4,7 @@ import { getJobResult, structureUrl, downloadJobUrl } from "../api";
 import { useJobPolling } from "../hooks/useJobPolling";
 import { addRecentJob } from "../recentJobs";
 import ProgressBar from "../components/ProgressBar";
+import HandProgress from "../components/HandProgress";
 import { BaseStyleButtons, ViewerPane } from "../components/Layout";
 import MolstarViewer from "../molstar/MolstarViewer";
 import { FIELD_ORDER, FIELD_ISOVALUES, DEFAULT_FIELD_ISOVALUE } from "../fieldMeta";
@@ -329,10 +330,7 @@ export default function ResultsPage() {
       <ViewerPane error={viewerError}>
         {isRunning && (
           <CenteredOverlay>
-            <p style={{ marginBottom: "1rem" }}>{meta.stage}...</p>
-            <div style={{ width: "20rem", maxWidth: "80vw" }}>
-              <ProgressBar progress={meta.progress ?? 0} dark />
-            </div>
+            <HandProgress progress={meta.progress ?? 0} label={`${meta.stage}...`} />
           </CenteredOverlay>
         )}
         {isError && (

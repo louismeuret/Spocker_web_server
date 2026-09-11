@@ -425,3 +425,59 @@ textarea {
   height: 5rem;
   width: auto;
 }
+
+/* ---------- hand-shaped progress meter (see components/HandProgress.jsx) ---------- */
+
+.nb-hand-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* The outline. Four hard drop-shadows offset around the shape read as a
+   stroke around it -- and unlike a border they follow the silhouette, which
+   is changing every frame. This has to sit on a PARENT of the masked
+   element: CSS applies filter *before* mask, so on the same element the
+   shadows would be cast by the unmasked box instead of by the hand. */
+.nb-hand {
+  line-height: 0;
+  filter: drop-shadow(2px 0 0 var(--nb-black)) drop-shadow(-2px 0 0 var(--nb-black))
+    drop-shadow(0 2px 0 var(--nb-black)) drop-shadow(0 -2px 0 var(--nb-black));
+}
+
+/* 552x683 is the artwork's own size; the ratio keeps `contain` from leaving
+   slack the fill would then rise through without touching the hand. */
+.nb-hand__shape {
+  position: relative;
+  aspect-ratio: 552 / 683;
+  background: var(--nb-white);
+  -webkit-mask-image: url(/spinner.webp);
+  mask-image: url(/spinner.webp);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.nb-hand__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--nb-black);
+  transition: height 300ms ease-out;
+}
+
+.nb-hand__value {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.nb-hand__label {
+  font-size: 0.75rem;
+  text-align: center;
+  max-width: 24rem;
+}
