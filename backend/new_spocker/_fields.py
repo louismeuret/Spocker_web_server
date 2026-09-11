@@ -90,9 +90,14 @@ def prepare_workdir(pdb_path: Path, work_dir: Path) -> Path:
     return local_path
 
 
+# The calls below are minutes of work each, so they announce themselves on
+# stdout. The caller's caller turns those lines into job progress -- see the
+# PIPELINE_STAGES table in backend/serve_pockets.py, which matches on this
+# exact "SMIF field <key>" wording.
 def compute_apbs(local_pdb: Path) -> Path:
     """Precompute the APBS potential once, for reuse (via -a) by every
     subsequent per-field smiffer call below."""
+    print("[fields] computing APBS electrostatics", flush=True)
     _run(["volgrids", "apbs", local_pdb.name, "--mrc"], cwd=local_pdb.parent)
     apbs_cache = local_pdb.parent / f"{local_pdb.name}.mrc"
     if not apbs_cache.exists():
@@ -115,7 +120,9 @@ def compute_whole_structure_fields(local_pdb: Path, apbs_cache: Path, out_dir: P
     any risk of one call's intermediate files being picked up by another."""
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = {}
-    for field, flags in WHOLE_STRUCTURE_FIELD_FLAGS.items():
+    total = len(WHOLE_STRUCTURE_FIELD_FLAGS)
+    for i, (field, flags) in enumerate(WHOLE_STRUCTURE_FIELD_FLAGS.items(), 1):
+        print(f"[fields] SMIF field {field} ({i}/{total})", flush=True)
         field_out = out_dir / field
         field_out.mkdir(parents=True, exist_ok=True)
         cmd = ["volgrids", "smiffer", local_pdb.name, "-a", str(apbs_cache), "-o", str(field_out)]
@@ -135,7 +142,9 @@ def compute_hbond_subset_fields(local_pdb: Path, indices: str, out_dir: Path) ->
         return {}
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = {}
-    for field, flags in HBOND_SUBSET_FIELD_FLAGS.items():
+    total = len(HBOND_SUBSET_FIELD_FLAGS)
+    for i, (field, flags) in enumerate(HBOND_SUBSET_FIELD_FLAGS.items(), 1):
+        print(f"[fields] H-bond subset field {field} ({i}/{total})", flush=True)
         field_out = out_dir / field
         field_out.mkdir(parents=True, exist_ok=True)
         cmd = ["volgrids", "smiffer", local_pdb.name, "-r", indices, "-o", str(field_out)]

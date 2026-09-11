@@ -37,7 +37,7 @@ def _resolve_model_selection(raw_bytes, requested_model):
     return structure_models.extract_model(raw_bytes, requested_model), None
 
 
-def _create_job(original_filename, ext, raw_bytes, requested_model):
+def _create_job(original_filename, ext, raw_bytes, requested_model, display_downscale, chain=None):
     """Resolves the model choice first, so a structure that still needs one
     never leaves a job dir behind, then queues the job."""
     try:
@@ -47,8 +47,21 @@ def _create_job(original_filename, ext, raw_bytes, requested_model):
     if models is not None:
         return jsonify({"needs_model_selection": True, "models": models}), 200
 
+    # An explicit chain narrows the structure further; no chain means "all
+    # of them", which is what every upload and most PDB codes want.
+    if chain:
+        narrowed = structure_models.extract_chain(final_bytes, chain)
+        if not any(l.startswith((b"ATOM", b"HETATM")) for l in narrowed.split(b"\n")):
+            return jsonify({"error": f"Chain '{chain}' has no atoms in this structure"}), 400
+        final_bytes = narrowed
+
     job_id = jobs_store.new_job_id()
-    jobs_store.create_job(job_id, original_filename=original_filename, input_ext=ext)
+    jobs_store.create_job(
+        job_id,
+        original_filename=original_filename,
+        input_ext=ext,
+        display_downscale=display_downscale,
+    )
     with open(jobs_store.input_file_path(job_id), "wb") as f:
         f.write(final_bytes)
     worker.enqueue(job_id)
@@ -56,7 +69,7 @@ def _create_job(original_filename, ext, raw_bytes, requested_model):
     return jsonify(jobs_store.read_meta(job_id)), 201
 
 
-def _create_job_from_pdb_code(pdb_code, requested_model):
+def _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, chain):
     """Downloads the structure from RCSB before creating any job record, so
     an invalid code or an RCSB miss never leaves behind a broken job dir --
     same immediate-feedback behaviour as the "no file selected" case below."""
@@ -70,7 +83,7 @@ def _create_job_from_pdb_code(pdb_code, requested_model):
     except pdb_fetch.PdbFetchError as exc:
         return jsonify({"error": str(exc)}), 502
 
-    return _create_job(f"{code}.pdb", ".pdb", pdb_bytes, requested_model)
+    return _create_job(f"{code}.pdb", ".pdb", pdb_bytes, requested_model, display_downscale, chain)
 
 
 @api.post("/jobs")
@@ -81,9 +94,22 @@ def create_job():
     except ValueError:
         return jsonify({"error": f"Invalid model '{model_param}'"}), 400
 
+    # How much to shrink the grids the 3D viewer loads (see
+    # serve_pockets.py's DISPLAY_DOWNSCALE). Display only -- the stored and
+    # downloadable grids are always full resolution.
+    try:
+        display_downscale = int(request.form.get("display_downscale") or config.DEFAULT_DISPLAY_DOWNSCALE)
+    except ValueError:
+        return jsonify({"error": "Invalid display_downscale"}), 400
+    if not 1 <= display_downscale <= config.MAX_DISPLAY_DOWNSCALE:
+        return jsonify({"error": f"display_downscale must be 1-{config.MAX_DISPLAY_DOWNSCALE}"}), 400
+
+    # Empty means "all chains" (see GET /api/pdb/<code>/chains).
+    chain = (request.form.get("chain") or "").strip()
+
     pdb_code = (request.form.get("pdb_code") or "").strip()
     if pdb_code:
-        return _create_job_from_pdb_code(pdb_code, requested_model)
+        return _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, chain)
 
     file = request.files.get("file")
     if file is None or file.filename == "":
@@ -102,7 +128,29 @@ def create_job():
             400,
         )
 
-    return _create_job(original_name, ext, file.read(), requested_model)
+    return _create_job(original_name, ext, file.read(), requested_model, display_downscale, chain)
+
+
+@api.get("/pdb/<pdb_code>/chains")
+def list_pdb_chains(pdb_code):
+    """What's in an RCSB entry, so the upload page can offer its chains as
+    soon as a valid code is typed -- before anything is submitted.
+
+    This downloads the entry, as job creation will again later. Two small
+    GETs against RCSB beats holding the file in server-side state between
+    the two requests, and the second one is what the job actually analyzes.
+    """
+    try:
+        code = pdb_fetch.validate_pdb_code(pdb_code)
+    except pdb_fetch.PdbFetchError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        pdb_bytes = pdb_fetch.fetch_pdb(code)
+    except pdb_fetch.PdbFetchError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    return jsonify({"code": code, "chains": pdb_fetch.list_chains(pdb_bytes)})
 
 
 @api.get("/jobs")
@@ -265,6 +313,11 @@ def download_job(job_id):
             # pocket_<n>.mrc file.
             for root, _dirs, files in os.walk(pockets_dir):
                 for name in sorted(files):
+                    # The downscaled viewer copies (see serve_pockets.py's
+                    # DISPLAY_DOWNSCALE) are a rendering convenience, not
+                    # data -- downloads get the full-resolution originals.
+                    if name.endswith(".display.mrc"):
+                        continue
                     full_path = os.path.join(root, name)
                     arcname = os.path.join("pockets", os.path.relpath(full_path, pockets_dir))
                     zf.write(full_path, arcname=arcname)
@@ -272,6 +325,8 @@ def download_job(job_id):
         fields_dir = jobs_store.fields_dir(job_id)
         if os.path.isdir(fields_dir):
             for name in sorted(os.listdir(fields_dir)):
+                if name.endswith(".display.mrc"):
+                    continue
                 zf.write(os.path.join(fields_dir, name), arcname=f"fields/{name}")
     buffer.seek(0)
 

@@ -398,3 +398,30 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* ---------- scene-loading spinner over the 3D viewer ---------- */
+
+.nb-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  /* Translucent, and click-through: the structure stays visible and
+     draggable while a volume grid is still loading. */
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--nb-black);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+/* public/spinner.webp is an animated WebP that plays on its own, so there is
+   no CSS animation here -- adding one would spin the animation. Height-driven
+   with auto width so its own 552x683 proportions are kept. */
+.nb-spinner {
+  height: 5rem;
+  width: auto;
+}

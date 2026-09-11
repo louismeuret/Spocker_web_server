@@ -1,0 +1,8 @@
+For the creation of the gif spinner.webp:
+ffmpeg -framerate 25 -start_number 1 -i %04d.png \
+  -filter_complex "[0:v]crop=552:683:687:227,select='not(mod(n,2))',hue=s=0,split[a][b];[a]palettegen=reserve_transparent=1:max_colors=4[p];[b][p]paletteuse=alpha_threshold=128:dither=none" \
+  output.gif
+
+gifsicle -O3 output.gif -o output_small.gif
+gifsicle --unoptimize -d2 output_small2.gif -o full.gif
+ffmpeg -i full.gif -c:v libwebp_anim -lossless 1 -loop 0 spinner.webp

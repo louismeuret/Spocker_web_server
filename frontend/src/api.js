@@ -24,11 +24,14 @@ async function request(path, options) {
   return body;
 }
 
-export function createJob({ file, pdbCode, model } = {}) {
+export function createJob({ file, pdbCode, model, displayDownscale } = {}) {
   const formData = new FormData();
   if (pdbCode) formData.append("pdb_code", pdbCode);
   else formData.append("file", file);
   if (model != null) formData.append("model", String(model));
+  // Viewer-only grid resolution (see backend/serve_pockets.py's
+  // DISPLAY_DOWNSCALE) -- what gets stored and downloaded is unaffected.
+  if (displayDownscale != null) formData.append("display_downscale", String(displayDownscale));
   return request("/api/jobs", { method: "POST", body: formData });
 }
 
@@ -47,6 +50,14 @@ export function getJobResult(jobId) {
  */
 export function compareJobs(jobIdA, jobIdB) {
   return request(`/api/compare/${id(jobIdA)}/${id(jobIdB)}`);
+}
+
+/**
+ * Chains in an RCSB entry, for the upload page's chain picker -- looked up
+ * from the PDB code alone, before any job exists.
+ */
+export function listPdbChains(pdbCode) {
+  return request(`/api/pdb/${id(pdbCode)}/chains`);
 }
 
 export function listExamples() {

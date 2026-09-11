@@ -31,7 +31,6 @@ export default function ComparePage() {
   const [showA, setShowA] = useState(true);
   const [showB, setShowB] = useState(true);
   const [baseStyle, setBaseStyle] = useState("cartoon");
-  const [spin, setSpin] = useState(false);
   const [visibleIds, setVisibleIds] = useState(new Set());
   const [focusId, setFocusId] = useState(null);
   const [viewerError, setViewerError] = useState(null);
@@ -184,10 +183,6 @@ export default function ComparePage() {
                   <span className="nb-toggle__swatch" style={{ background: JOB_B_COLOR, borderColor: JOB_B_COLOR }} />
                   Structure B
                 </label>
-                <label className="nb-toggle">
-                  <input type="checkbox" checked={spin} onChange={(e) => setSpin(e.target.checked)} />
-                  Spin
-                </label>
               </div>
 
               <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
@@ -243,7 +238,6 @@ export default function ComparePage() {
             showA={showA}
             showB={showB}
             baseStyle={baseStyle}
-            spin={spin}
             focusId={focusId}
             onFocusApplied={clearFocus}
             onError={setViewerError}

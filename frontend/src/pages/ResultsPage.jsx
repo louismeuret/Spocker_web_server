@@ -1,13 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getJobResult, structureUrl, downloadJobUrl } from "../api";
 import { useJobPolling } from "../hooks/useJobPolling";
-import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { addRecentJob } from "../recentJobs";
 import ProgressBar from "../components/ProgressBar";
 import { BaseStyleButtons, ViewerPane } from "../components/Layout";
 import MolstarViewer from "../molstar/MolstarViewer";
-import { FIELD_ISOVALUES, DEFAULT_FIELD_ISOVALUE } from "../fieldMeta";
+import { FIELD_ORDER, FIELD_ISOVALUES, DEFAULT_FIELD_ISOVALUE } from "../fieldMeta";
 
 // Plotly is ~1MB+ minified -- most jobs never expand a pocket's chart, so
 // it's only fetched once one actually does.
@@ -24,22 +23,28 @@ export default function ResultsPage() {
   const [visiblePocketIds, setVisiblePocketIds] = useState(new Set());
   const [baseStyle, setBaseStyle] = useState("cartoon");
   const [showPocketVolumes, setShowPocketVolumes] = useState(true);
-  const [spin, setSpin] = useState(false);
   const [focusPocketId, setFocusPocketId] = useState(null);
   const [viewerError, setViewerError] = useState(null);
-  const [expandedPocketId, setExpandedPocketId] = useState(null);
+  // Any number of pockets can be expanded at once, so their field-
+  // contribution charts can be read side by side.
+  const [expandedPocketIds, setExpandedPocketIds] = useState(new Set());
   const [residueVisiblePocketIds, setResidueVisiblePocketIds] = useState(new Set());
-  const [fieldSelection, setFieldSelection] = useState(null); // { pocketId, field } | null
-  const [fieldIsovalue, setFieldIsovalue] = useState(DEFAULT_FIELD_ISOVALUE);
-  const debouncedFieldIsovalue = useDebouncedValue(fieldIsovalue, 30);
+  // Every field preview currently drawn, each with its own isovalue:
+  // [{ pocketId, field, isovalue }]. Several can be on together (two fields
+  // in one pocket, or the same field across two pockets) -- that comparison
+  // is the whole point of showing them on the structure at all.
+  const [fieldSelections, setFieldSelections] = useState([]);
+  // Both belong to the page, not to any one chart: they only mean anything
+  // when every pocket's chart obeys them at once (see FieldContributionsPlot).
+  const [chartType, setChartType] = useState("bar"); // bar | pie
+  const [sameScale, setSameScale] = useState(false);
+  // Off by default: in a sidebar this narrow the legend costs half the pie,
+  // and hovering a slice already names it.
+  const [showLegend, setShowLegend] = useState(false);
   const viewerRef = useRef(null);
   const clearFocus = useCallback(() => setFocusPocketId(null), []);
 
-  function toggleExpanded(id) {
-    setExpandedPocketId((prev) => (prev === id ? null : id));
-  }
-
-  // Both pocket toggles (visibility, lining residues) flip one id in a Set.
+  // Pocket toggles (visibility, lining residues, expanded) flip one id in a Set.
   function toggleIn(setIds, id) {
     setIds((prev) => {
       const next = new Set(prev);
@@ -49,20 +54,35 @@ export default function ResultsPage() {
     });
   }
 
-  // Clicking a bar in pocket `pocketId`'s chart selects that field, scoped
-  // to that pocket; clicking the same bar again clears the preview.
-  function selectField(pocketId, field) {
-    setFieldSelection((prev) => {
-      if (prev && prev.pocketId === pocketId && prev.field === field) return null;
-      return { pocketId, field };
+  // Clicking a bar in pocket `pocketId`'s chart adds that field's preview,
+  // scoped to that pocket; clicking the same bar again removes it. New
+  // previews start at the field's tuned default isovalue (see fieldMeta.js).
+  function toggleField(pocketId, field) {
+    setFieldSelections((prev) => {
+      const isSelected = (s) => s.pocketId === pocketId && s.field === field;
+      if (prev.some(isSelected)) return prev.filter((s) => !isSelected(s));
+      return [...prev, { pocketId, field, isovalue: FIELD_ISOVALUES[field] ?? DEFAULT_FIELD_ISOVALUE }];
     });
   }
 
-  // Resets the slider to the newly selected field's tuned default (see
-  // fieldMeta.js) whenever the selection changes.
-  useEffect(() => {
-    if (fieldSelection) setFieldIsovalue(FIELD_ISOVALUES[fieldSelection.field] ?? DEFAULT_FIELD_ISOVALUE);
-  }, [fieldSelection]);
+  function setFieldIsovalue(pocketId, field, isovalue) {
+    setFieldSelections((prev) =>
+      prev.map((s) => (s.pocketId === pocketId && s.field === field ? { ...s, isovalue } : s))
+    );
+  }
+
+  // The biggest contribution any pocket has, which every chart's y-axis is
+  // pinned to while "same scale" is on. Without it each chart autoscales to
+  // its own biggest field, so a weak pocket and a strong one draw identical
+  // bars and nothing can be compared across pockets.
+  const chartYMax = useMemo(() => {
+    if (!sameScale || !result) return null;
+    const all = result.pockets.flatMap((p) =>
+      FIELD_ORDER.map((f) => p.field_contributions?.[f] ?? 0)
+    );
+    const max = Math.max(0, ...all);
+    return max > 0 ? max * 1.05 : null;
+  }, [sameScale, result]);
 
   // Once the job is done, fetch the pocket-detection results.
   useEffect(() => {
@@ -198,17 +218,13 @@ export default function ResultsPage() {
               <div>
                 <span className="nb-label">Display</span>
                 <BaseStyleButtons value={baseStyle} onChange={setBaseStyle} />
-                <label className="nb-toggle" style={{ marginBottom: "0.5rem" }}>
+                <label className="nb-toggle">
                   <input
                     type="checkbox"
                     checked={showPocketVolumes}
                     onChange={(e) => setShowPocketVolumes(e.target.checked)}
                   />
                   Pocket volumes (MRC)
-                </label>
-                <label className="nb-toggle">
-                  <input type="checkbox" checked={spin} onChange={(e) => setSpin(e.target.checked)} />
-                  Spin
                 </label>
               </div>
 
@@ -241,6 +257,40 @@ export default function ResultsPage() {
                   </div>
                 </div>
 
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.5rem" }}>
+                  <span className="nb-label" style={{ marginBottom: 0 }}>
+                    Chart
+                  </span>
+                  {["bar", "pie"].map((type) => (
+                    <button
+                      key={type}
+                      className={`nb-btn nb-btn--sm ${chartType === type ? "is-pressed" : ""}`}
+                      onClick={() => setChartType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                  {chartType === "bar" ? (
+                    <button
+                      className={`nb-btn nb-btn--sm ${sameScale ? "is-pressed" : ""}`}
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => setSameScale((v) => !v)}
+                      title="Pin every pocket's chart to one y-axis so their bars are comparable"
+                    >
+                      Same scale
+                    </button>
+                  ) : (
+                    <button
+                      className={`nb-btn nb-btn--sm ${showLegend ? "is-pressed" : ""}`}
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => setShowLegend((v) => !v)}
+                      title="Show the field legend for the pies"
+                    >
+                      Legend
+                    </button>
+                  )}
+                </div>
+
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.6rem" }}>
                   {result.pockets.map((pocket) => (
                     <PocketRow
@@ -249,13 +299,15 @@ export default function ResultsPage() {
                       visible={visiblePocketIds.has(pocket.id)}
                       onToggle={() => toggleIn(setVisiblePocketIds, pocket.id)}
                       onFocus={() => setFocusPocketId(pocket.id)}
-                      expanded={expandedPocketId === pocket.id}
-                      onToggleExpanded={() => toggleExpanded(pocket.id)}
+                      expanded={expandedPocketIds.has(pocket.id)}
+                      onToggleExpanded={() => toggleIn(setExpandedPocketIds, pocket.id)}
                       availableFields={result.fields}
-                      selectedField={fieldSelection?.pocketId === pocket.id ? fieldSelection.field : null}
-                      onSelectField={(field) => selectField(pocket.id, field)}
-                      isovalue={fieldIsovalue}
-                      onIsovalueChange={setFieldIsovalue}
+                      selections={fieldSelections.filter((s) => s.pocketId === pocket.id)}
+                      onSelectField={(field) => toggleField(pocket.id, field)}
+                      onIsovalueChange={(field, value) => setFieldIsovalue(pocket.id, field, value)}
+                      chartType={chartType}
+                      chartYMax={chartYMax}
+                      showLegend={showLegend}
                       showResidues={residueVisiblePocketIds.has(pocket.id)}
                       onToggleResidues={() => toggleIn(setResidueVisiblePocketIds, pocket.id)}
                     />
@@ -273,7 +325,7 @@ export default function ResultsPage() {
         </div>
       </aside>
 
-      {/* Right column: the 3D viewer (or a progress/error placeholder) */}
+      {}
       <ViewerPane error={viewerError}>
         {isRunning && (
           <CenteredOverlay>
@@ -302,10 +354,7 @@ export default function ResultsPage() {
             visibleResiduePocketIds={residueVisiblePocketIds}
             baseStyle={baseStyle}
             showPocketVolumes={showPocketVolumes}
-            selectedField={fieldSelection?.field}
-            selectedFieldPocketId={fieldSelection?.pocketId}
-            fieldIsovalue={debouncedFieldIsovalue}
-            spin={spin}
+            fieldSelections={fieldSelections}
             focusPocketId={focusPocketId}
             onFocusApplied={clearFocus}
             onError={setViewerError}
@@ -324,10 +373,12 @@ function PocketRow({
   expanded,
   onToggleExpanded,
   availableFields,
-  selectedField,
+  selections,
   onSelectField,
-  isovalue,
   onIsovalueChange,
+  chartType,
+  chartYMax,
+  showLegend,
   showResidues,
   onToggleResidues,
 }) {
@@ -372,10 +423,12 @@ function PocketRow({
               <FieldContributionsPlot
                 fieldContributions={pocket.field_contributions}
                 availableFields={availableFields}
-                selectedField={selectedField}
+                selections={selections}
                 onSelectField={onSelectField}
-                isovalue={isovalue}
                 onIsovalueChange={onIsovalueChange}
+                chartType={chartType}
+                yMax={chartYMax}
+                showLegend={showLegend}
               />
             </Suspense>
           )}

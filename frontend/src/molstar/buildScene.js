@@ -1,11 +1,14 @@
 import { pocketVolumeUrl, pocketFieldVolumeUrl } from "../api";
 import { FIELD_COLORS, FIELD_ISOVALUES, DEFAULT_FIELD_ISOVALUE } from "../fieldMeta";
 
-// Stable MVS ref for the field-preview isosurface representation node, so
+// Stable MVS ref for each field-preview isosurface representation node, so
 // MolstarViewer can look it up afterwards (via molstar's queryMVSRef) and
 // patch just its isoValue directly when the slider moves, instead of
-// rebuilding/reloading the whole scene on every tick.
-export const FIELD_PREVIEW_VOLUME_REF = "field-preview-volume";
+// rebuilding/reloading the whole scene on every tick. One per (pocket,
+// field) pair, since several previews can be on at once.
+export function fieldPreviewRef(pocketId, field) {
+  return `field-preview:${pocketId}:${field}`;
+}
 
 /**
  * Builds a MolViewSpec (MVS) scene describing: the uploaded structure, a
@@ -17,14 +20,16 @@ export const FIELD_PREVIEW_VOLUME_REF = "field-preview-volume";
  * shown as an isosurface -- the actual pocket geometry the pipeline
  * computed, rather than an approximation built from the lining residues.
  *
- * When `selectedField` is set (clicking a bar in a pocket's field-
- * contributions chart -- see FieldContributionsPlot.jsx), that field's MRC
- * grid *clipped to `selectedFieldPocketId`'s own pocket region* (see GET
- * /api/jobs/<id>/pockets/<pocket_id>/fields/<field_name>/volume) is also
- * loaded and shown as an isosurface, so "where is the stacking field
- * inside this pocket" is visible directly on the structure, layered on top
- * of whatever pockets are already shown. `fieldIsovalue` (driven by a
- * slider under the chart) controls its threshold live.
+ * Each entry in `fieldSelections` (one per bar clicked in some pocket's
+ * field-contributions chart -- see FieldContributionsPlot.jsx) loads that
+ * field's MRC grid *clipped to that entry's own pocket region* (see GET
+ * /api/jobs/<id>/pockets/<pocket_id>/fields/<field_name>/volume) and shows
+ * it as an isosurface, so "where is the stacking field inside this pocket"
+ * is visible directly on the structure, layered on top of whatever pockets
+ * are already shown. Several can be on at once, across different pockets,
+ * so two fields (or the same field in two pockets) can be compared side by
+ * side. Each carries its own `isovalue`, driven live by the slider under
+ * its chart.
  *
  * MVS is Mol*'s declarative "state as data" format: we build a fresh state
  * object whenever pockets/toggles change and hand the whole thing to
@@ -46,9 +51,8 @@ export const FIELD_PREVIEW_VOLUME_REF = "field-preview-volume";
  *   automatically just because the pocket itself is visible
  * @param {'cartoon'|'surface'} opts.baseStyle - representation for the backbone
  * @param {boolean} opts.showPocketVolumes - render each pocket's real MRC isosurface
- * @param {string|null} opts.selectedField - raw field name to preview as an isosurface, if any
- * @param {string|null} opts.selectedFieldPocketId - which pocket to clip that field preview to
- * @param {number} [opts.fieldIsovalue] - isosurface threshold for the field preview (from the chart's slider)
+ * @param {Array<{pocketId: string, field: string, isovalue: number}>} [opts.fieldSelections]
+ *   field previews to draw, each clipped to its own pocket
  * @param {string|null} opts.focusPocketId - if set, camera focuses this pocket
  */
 export function buildMvsState(molstarLib, opts) {
@@ -61,9 +65,7 @@ export function buildMvsState(molstarLib, opts) {
     visibleResiduePocketIds,
     baseStyle,
     showPocketVolumes,
-    selectedField,
-    selectedFieldPocketId,
-    fieldIsovalue,
+    fieldSelections,
     focusPocketId,
   } = opts;
   const { createBuilder } = molstarLib.extensions.mvs;
@@ -122,22 +124,20 @@ export function buildMvsState(molstarLib, opts) {
     }
   }
 
-  if (selectedField && selectedFieldPocketId && jobId) {
-    const isovalue = fieldIsovalue ?? FIELD_ISOVALUES[selectedField] ?? DEFAULT_FIELD_ISOVALUE;
-    const color = FIELD_COLORS[selectedField] ?? "#ffffff";
-    const fieldVolume = builder
-      .download({ url: pocketFieldVolumeUrl(jobId, selectedFieldPocketId, selectedField) })
+  for (const { pocketId, field, isovalue } of jobId ? fieldSelections ?? [] : []) {
+    builder
+      .download({ url: pocketFieldVolumeUrl(jobId, pocketId, field) })
       .parse({ format: "map" })
-      .volume();
-    fieldVolume
+      .volume()
+      // Faces only, no wireframe: the wireframe doubles the geometry mol*
+      // has to rebuild on every isovalue change for no extra information.
       .representation({
         type: "isosurface",
-        absolute_isovalue: isovalue,
+        absolute_isovalue: isovalue ?? FIELD_ISOVALUES[field] ?? DEFAULT_FIELD_ISOVALUE,
         show_faces: true,
-        show_wireframe: true,
-        ref: FIELD_PREVIEW_VOLUME_REF,
+        ref: fieldPreviewRef(pocketId, field),
       })
-      .color({ color })
+      .color({ color: FIELD_COLORS[field] ?? "#ffffff" })
       .opacity({ opacity: 0.55 });
   }
 

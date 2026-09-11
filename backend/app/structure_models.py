@@ -1,13 +1,7 @@
-"""
-Multi-model (NMR ensemble, etc.) support for legacy-PDB-format uploads.
-
-A structure with several MODEL/ENDMDL blocks can't be handed to the SPOCKER
-pipeline as-is -- it needs exactly one conformation. Rather than silently
-picking one (pdbfixer's own behaviour here isn't something we want to rely
-on), routes.py asks the frontend which model to analyze whenever more than
-one is found, then re-submits with that choice.
-"""
+import os
 import re
+import tempfile
+import warnings
 
 _MODEL_RE = re.compile(rb"^MODEL\s+(\d+)", re.MULTILINE)
 
@@ -47,3 +41,36 @@ def extract_model(structure_bytes: bytes, model_num: int) -> bytes:
             continue
         out.append(line)
     return b"\n".join(out)
+
+
+# PDB chain ids are a single character in the format; a few tools emit up to
+# four. Anything else is rejected rather than interpolated, since the chain
+# id reaches us off an HTTP form and goes into a selection *expression*.
+_CHAIN_ID_RE = re.compile(r"^[A-Za-z0-9]{1,4}$")
+
+
+def extract_chain(structure_bytes: bytes, chain_id: str) -> bytes:
+    if not _CHAIN_ID_RE.match(chain_id or ""):
+        return b""
+
+    # Imported here rather than at module scope: MDAnalysis is seconds of
+    # import time (and pulls in RDKit), which every request would otherwise
+    # pay at server start for a step only chain-restricted jobs reach.
+    import MDAnalysis
+
+    with tempfile.TemporaryDirectory(prefix="spocker_chain_") as tmp:
+        src = os.path.join(tmp, "full.pdb")
+        dest = os.path.join(tmp, "chain.pdb")
+        with open(src, "wb") as f:
+            f.write(structure_bytes)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            universe = MDAnalysis.Universe(src)
+            selection = universe.select_atoms(f"chainID {chain_id}")
+            if selection.n_atoms == 0:
+                return b""
+            selection.write(dest)
+
+        with open(dest, "rb") as f:
+            return f.read()

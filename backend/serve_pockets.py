@@ -36,7 +36,13 @@ Side effects:
     <job_dir>/pockets/<pocket_id>/fields/<name>.mrc -- the same field grids,
     resampled onto that pocket's own (smaller) grid and zeroed outside its
     mask, so the frontend can show a field clipped to just one pocket
-    instead of the whole structure.
+    instead of the whole structure. APBS additionally gets apbs_neg.mrc /
+    apbs_pos.mrc, its two sign halves as all-positive grids (see
+    _display_grids).
+
+    <...>.display.mrc -- a downscaled companion next to every pocket/field
+    grid above (see DISPLAY_DOWNSCALE). The viewer loads these; downloads
+    still get the full-resolution originals.
 
 Prints exactly one JSON object to stdout: {"structure": {...}, "pockets": [...]}.
 All pipeline/tooling chatter is captured internally and never reaches real
@@ -44,6 +50,7 @@ stdout, which must stay pure JSON for the caller to parse.
 """
 import csv
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -70,6 +77,46 @@ RNA_LINING_CUTOFF_A = 5.0
 # are keyed by these.
 FIELD_NAMES = ("stacking", "hydrophobic", "hbdonors", "hbacceptors", "apbs")
 
+# Every grid is also written a second time, downscaled, as
+# "<name>.display.mrc" next to the original. That downscaled copy is the one
+# the viewer loads (see app/jobs_store.py) -- an 0.25A grid is far more
+# detail than a browser isosurface needs, and 2x fewer samples per axis is
+# 8x less data to parse and re-triangulate on every isovalue change. The
+# full-resolution originals are untouched and are what downloads contain.
+# Set by app/spocker_bridge.py from the job's own setting; 1 disables it.
+DISPLAY_DOWNSCALE = max(1, int(os.environ.get("SPOCKER_DISPLAY_DOWNSCALE") or 2))
+
+# Marks a progress line on stderr. Must stay identical to PROGRESS_PREFIX in
+# app/spocker_bridge.py, which is the only reader -- it can't import this
+# module, since the two run in different Python environments.
+PROGRESS_PREFIX = "@@SPOCKER_PROGRESS "
+
+# What the pipeline's own chatter means, in the user's terms. Each entry is
+# (substring to look for in a stdout line, percent, message). The percents
+# span the pipeline's slice of the job; app/worker.py owns everything before
+# and after. Matched in order, first hit wins, unmatched lines are ignored --
+# so a wording change in run_pipeline_new_spocker.sh costs a missed update,
+# never a wrong one.
+PIPELINE_STAGES = (
+    ("[1/3]", 20, "Generating interaction fields"),
+    ("computing APBS", 24, "Solving electrostatics (APBS)"),
+    ("SMIF field apbs", 28, "Building the APBS grid"),
+    ("SMIF field hphob", 34, "Building the hydrophobic grid"),
+    ("SMIF field stk", 40, "Building the stacking grid"),
+    ("SMIF field hba", 46, "Building the H-bond acceptor grid"),
+    ("SMIF field hbd", 52, "Building the H-bond donor grid"),
+    ("generating hydrogen-bond fields", 56, "Building H-bond fields for non-paired residues"),
+    ("[2/3]", 60, "Finding binding-site hotspots"),
+    ("Running Script1", 62, "Deriving per-field isovalues"),
+    ("Running Script2", 66, "Detecting binding-site hotspots"),
+    ("Running Script3", 70, "Building pocket volumes from hotspots"),
+    ("Running Script6", 73, "Trimming APBS around the RNA"),
+    ("Running Script7", 75, "Trimming the hydrophobic field"),
+    ("[3/3]", 78, "Building H-bond pocket volumes"),
+    ("Merging pockets", 84, "Merging pockets and scoring them"),
+    ("Collecting scored", 88, "Collecting the scored field grids"),
+)
+
 
 class PipelineError(RuntimeError):
     pass
@@ -85,6 +132,44 @@ def _run(cmd):
     return result
 
 
+def _progress(percent, message):
+    """Report a stage to the web backend, which turns it into the job's
+    `stage`/`progress` in meta.json (see app/spocker_bridge.py, which parses
+    these back out, and app/worker.py, which writes them).
+
+    On stderr because stdout is reserved for the single result JSON. Anything
+    on stderr without this prefix is just diagnostics.
+    """
+    print(f"{PROGRESS_PREFIX}{percent} {message}", file=sys.stderr, flush=True)
+
+
+def _run_streaming(cmd, on_line):
+    """As _run, but hands each stdout line to `on_line` while the command is
+    still running, so a pipeline that takes minutes can say what it's doing
+    instead of going silent and reporting everything at the end.
+
+    stderr goes to a temp file rather than a second pipe: draining one pipe
+    while the other fills is the classic way to deadlock a subprocess, and
+    the failure path wants the whole of it anyway.
+    """
+    output = []
+    with tempfile.TemporaryFile("w+", errors="replace") as err_file:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err_file, text=True, bufsize=1)
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            output.append(line)
+            on_line(line)
+        proc.wait()
+        err_file.seek(0)
+        stderr = err_file.read()
+
+    if proc.returncode != 0:
+        raise PipelineError(
+            f"Command failed: {' '.join(str(c) for c in cmd)}\n"
+            "--- stdout ---\n" + "\n".join(output) + f"\n--- stderr ---\n{stderr}"
+        )
+
+
 def clean_structure(raw_path: Path, dest_path: Path) -> None:
     """Mirrors 0_prepare_input.sh: PDBFixer, then strip down to nucleic-acid
     residues only. Uploaded structures routinely have the kind of gaps and
@@ -93,6 +178,7 @@ def clean_structure(raw_path: Path, dest_path: Path) -> None:
     generation."""
     with tempfile.TemporaryDirectory(prefix="spocker_clean_") as tmp:
         fixed_path = Path(tmp) / "fixed.pdb"
+        _progress(8, "Repairing the structure (PDBFixer)")
         _run([
             "pdbfixer", str(raw_path),
             "--replace-nonstandard",
@@ -101,11 +187,18 @@ def clean_structure(raw_path: Path, dest_path: Path) -> None:
         ])
         # pdbfixer keeps amino-acid ligands (and turns their HETATM records
         # into ATOM), so a nucleic-only filter is still needed afterwards.
+        _progress(14, "Selecting nucleic-acid residues")
         _run(["molutils", "select", "nucleic", str(fixed_path), str(dest_path)])
 
 
 def run_pipeline(processed_pdb: Path, out_dir: Path) -> None:
-    _run(["bash", str(RUN_PIPELINE_SH), str(processed_pdb), str(out_dir)])
+    def relay(line):
+        for marker, percent, message in PIPELINE_STAGES:
+            if marker in line:
+                _progress(percent, message)
+                return
+
+    _run_streaming(["bash", str(RUN_PIPELINE_SH), str(processed_pdb), str(out_dir)], relay)
 
 
 def _load_mrc(path: Path):
@@ -158,6 +251,33 @@ def _write_mrc(path: Path, data, voxel, origin) -> None:
         mrc.update_header_stats()
 
 
+def _downscale(data, factor):
+    """Block-max downsample by `factor` along each axis. Max, not mean, so a
+    voxel above an isovalue stays above it -- the same slider positions mean
+    the same thing on the display grid as on the original. The last <factor
+    voxels of each axis are dropped (at 0.25A each, invisible), which keeps
+    the origin unchanged."""
+    data = np.asarray(data, dtype=np.float32)
+    shape = [s // factor for s in data.shape]
+    if min(shape) == 0:
+        return data
+    cropped = data[:shape[0] * factor, :shape[1] * factor, :shape[2] * factor]
+    return cropped.reshape(shape[0], factor, shape[1], factor, shape[2], factor).max(axis=(1, 3, 5))
+
+
+def _write_display_mrc(original_path: Path, data, voxel, origin) -> None:
+    """Writes the downscaled companion grid for `original_path` (see
+    DISPLAY_DOWNSCALE). No-op when downscaling is off."""
+    if DISPLAY_DOWNSCALE <= 1:
+        return
+    _write_mrc(
+        original_path.with_suffix(".display.mrc"),
+        _downscale(data, DISPLAY_DOWNSCALE),
+        np.asarray(voxel, dtype=float) * DISPLAY_DOWNSCALE,
+        origin,
+    )
+
+
 def field_within_pocket(pocket_mask, pocket_voxel, pocket_origin, field_data, field_voxel, field_origin):
     """Resample a raw field grid onto a pocket's own (usually much smaller)
     grid, keeping the field's value only where the pocket mask is set and
@@ -185,6 +305,36 @@ def field_within_pocket(pocket_mask, pocket_voxel, pocket_origin, field_data, fi
     vc = coords[valid]
     out[vc[:, 0], vc[:, 1], vc[:, 2]] = field_data[vi[:, 0], vi[:, 1], vi[:, 2]]
     return out
+
+
+def _display_grids(name, data):
+    """Yields (filename_stem, grid) for one field: the field itself, plus --
+    for APBS only -- its two sign halves as separate all-positive grids.
+
+    APBS around RNA is negative almost everywhere (the backbone is
+    polyanionic), so an isosurface at any positive threshold shows nothing at
+    all. Splitting it gives the viewer two grids it can threshold normally:
+    apbs_neg holds |V| where V < 0, apbs_pos holds V where V > 0. Scoring is
+    unaffected -- it reads the original apbs grid, which is still written.
+    """
+    yield name, data
+    if name == "apbs":
+        yield "apbs_neg", np.maximum(-data, 0.0)
+        yield "apbs_pos", np.maximum(data, 0.0)
+
+
+def _sign_share(data):
+    """How a grid's total magnitude divides between its negative and positive
+    parts, as (negative_share, positive_share) summing to 1 (or to 0 for an
+    empty grid). Used to split APBS's single scored contribution -- Script8
+    integrates |apbs|, so the ratio it reports lumps both signs together --
+    into the two halves the chart draws separately."""
+    neg = float(np.abs(np.minimum(data, 0.0)).sum())
+    pos = float(np.maximum(data, 0.0).sum())
+    total = neg + pos
+    if total <= 0.0:
+        return 0.0, 0.0
+    return neg / total, pos / total
 
 
 def parse_rna_atoms(pdb_path: Path) -> list:
@@ -277,6 +427,7 @@ def build_result(raw_input_path: str, job_dir: str, job_id: str) -> dict:
     try:
         run_pipeline(pipeline_input, out_dir)
 
+        _progress(90, "Reading the analyzed structure")
         atoms = parse_rna_atoms(processed_pdb)
         chains = sorted({a["chain"] for a in atoms})
         residues_seen = {(a["chain"], a["resi"]) for a in atoms}
@@ -290,6 +441,11 @@ def build_result(raw_input_path: str, job_dir: str, job_id: str) -> dict:
                 shutil.copy(src, dest)
                 available_fields.append(name)
                 field_data[name] = _load_mrc(dest)
+                if name == "apbs":
+                    # Derived per pocket rather than generated by the
+                    # pipeline, but the frontend treats them like any other
+                    # field (see _display_grids / _sign_share).
+                    available_fields.extend(("apbs_neg", "apbs_pos"))
 
         csv_path = out_dir / f"{job_id}_field_contributions.csv"
         rows = []
@@ -297,6 +453,7 @@ def build_result(raw_input_path: str, job_dir: str, job_id: str) -> dict:
             with open(csv_path, newline="") as f:
                 rows = list(csv.DictReader(f))
 
+        _progress(92, f"Building viewer grids for {len(rows)} pocket(s)")
         pockets = []
         for row in rows:
             mrc_path = out_dir / f"{job_id}.{row['pocket_name']}_Volume.mrc"
@@ -307,18 +464,34 @@ def build_result(raw_input_path: str, job_dir: str, job_id: str) -> dict:
             # Pocket_web_serveur's spocker_bridge.py assigns "pocket_<n>" ids
             # by enumerating this same list, so the ids always line up.
             pocket_id = f"pocket_{len(pockets) + 1}"
-            shutil.copy(mrc_path, pockets_dir / f"{pocket_id}.mrc")
+            _progress(92, f"Masking fields into pocket {len(pockets) + 1}/{len(rows)}")
+            pocket_mrc = pockets_dir / f"{pocket_id}.mrc"
+            shutil.copy(mrc_path, pocket_mrc)
+            _write_display_mrc(pocket_mrc, mask, voxel, origin)
 
             pocket_fields_dir = pockets_dir / pocket_id / "fields"
             pocket_fields_dir.mkdir(parents=True)
+            apbs_share = None
             for name, (f_data, f_voxel, f_origin) in field_data.items():
                 masked = field_within_pocket(mask, voxel, origin, f_data, f_voxel, f_origin)
-                _write_mrc(pocket_fields_dir / f"{name}.mrc", masked, voxel, origin)
+                if name == "apbs":
+                    apbs_share = _sign_share(masked)
+                for out_name, grid in _display_grids(name, masked):
+                    out_path = pocket_fields_dir / f"{out_name}.mrc"
+                    _write_mrc(out_path, grid, voxel, origin)
+                    _write_display_mrc(out_path, grid, voxel, origin)
 
             field_contributions = {
                 name: round(float(row[f"{name}_ratio"]), 4)
                 for name in FIELD_NAMES if f"{name}_ratio" in row
             }
+            # The two APBS halves get the scored apbs ratio divided in the
+            # same proportion as this pocket's own positive/negative APBS
+            # magnitude, so apbs_neg + apbs_pos == apbs and the chart can
+            # show which side the electrostatics actually came from.
+            if apbs_share and "apbs" in field_contributions:
+                for sub, share in zip(("apbs_neg", "apbs_pos"), apbs_share):
+                    field_contributions[sub] = round(field_contributions["apbs"] * share, 4)
             pockets.append({
                 "score": round(float(row["pocket_score"]), 4),
                 "volume": round(float(row["pocket_volume_A3"]), 1),

@@ -12,11 +12,11 @@ import ViewerShell from "./ViewerShell";
  * buildCompareScene.js).
  */
 const CompareViewer = forwardRef(function CompareViewer(
-  { comparison, align, visibleIds, showA, showB, baseStyle, spin, focusId, onFocusApplied, onError },
+  { comparison, align, visibleIds, showA, showB, baseStyle, focusId, onFocusApplied, onError },
   ref
 ) {
   const containerRef = useRef(null);
-  const { status, resetView, loadScene } = useMolstarViewer({ containerRef, spin, onError });
+  const { status, busy, resetView, loadScene } = useMolstarViewer({ containerRef, onError });
 
   useImperativeHandle(ref, () => ({ resetView }));
 
@@ -26,13 +26,13 @@ const CompareViewer = forwardRef(function CompareViewer(
         (lib) =>
           comparison &&
           buildCompareState(lib, { comparison, align, visibleIds, showA, showB, baseStyle, focusId }),
-        { onLoaded: () => focusId && onFocusApplied?.() }
+        { moveCamera: !!focusId, onLoaded: () => focusId && onFocusApplied?.() }
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [status, comparison, align, visibleIds, showA, showB, baseStyle, focusId]
   );
 
-  return <ViewerShell containerRef={containerRef} status={status} />;
+  return <ViewerShell containerRef={containerRef} status={status} busy={busy} />;
 });
 
 export default CompareViewer;

@@ -12,7 +12,7 @@ export default defineConfig({
     // production (where Flask serves the built frontend itself) alike.
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'http://172.27.6.60:5001',
         changeOrigin: true,
       },
     },

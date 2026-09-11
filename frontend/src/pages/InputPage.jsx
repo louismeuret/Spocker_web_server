@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createJob, listExamples } from "../api";
+import { createJob, listExamples, listPdbChains } from "../api";
 import { addRecentJob, getRecentJobs } from "../recentJobs";
 
 const ACCEPTED = ".pdb,.ent,.cif";
 const PDB_CODE_RE = /^[0-9][A-Za-z0-9]{3}$/;
+
+// How much coarser the grids handed to the 3D viewer are than the ones the
+// pipeline computes and stores. The full-resolution grids are always what
+// gets saved and downloaded -- this only trades viewer detail for speed, and
+// a 0.25A grid is far finer than a browser isosurface needs. Must stay within
+// backend/app/config.py's MAX_DISPLAY_DOWNSCALE.
+const DOWNSCALE_OPTIONS = [1, 2, 4, 8];
+const DEFAULT_DOWNSCALE = 2;
+const PIPELINE_GRID_A = 0.25;
 
 export default function InputPage() {
   const navigate = useNavigate();
@@ -22,6 +31,11 @@ export default function InputPage() {
   // exact same file/code, this time with that model number attached.
   const [pendingModels, setPendingModels] = useState(null);
   const [selectedModel, setSelectedModel] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [displayDownscale, setDisplayDownscale] = useState(DEFAULT_DOWNSCALE);
+  // "" means every chain, which is both the default and what an uploaded
+  // file always gets (the picker is only offered for PDB codes).
+  const [chain, setChain] = useState("");
 
   function pickFile(f) {
     if (!f) return;
@@ -45,6 +59,7 @@ export default function InputPage() {
   }
 
   const trimmedCode = pdbCode.trim();
+  const chains = usePdbChains(mode === "code" ? trimmedCode : "");
   const canSubmit = mode === "file" ? !!file : PDB_CODE_RE.test(trimmedCode);
   const hasExamples = examples.calculations.length > 0 || examples.comparisons.length > 0;
 
@@ -54,8 +69,8 @@ export default function InputPage() {
     try {
       const job =
         mode === "code"
-          ? await createJob({ pdbCode: trimmedCode, ...extra })
-          : await createJob({ file, ...extra });
+          ? await createJob({ pdbCode: trimmedCode, displayDownscale, chain, ...extra })
+          : await createJob({ file, displayDownscale, ...extra });
 
       if (job.needs_model_selection) {
         setPendingModels(job.models);
@@ -99,16 +114,52 @@ export default function InputPage() {
       <div style={{ width: "min(560px, 100%)" }}>
         <div className="nb-panel">
           <div className="nb-panel__header">
-            <span>New Pocket Calculation</span>
+            <span>Pocket Calculation</span>
+            <button
+              type="button"
+              className="nb-btn nb-btn--sm nb-btn--invert"
+              aria-expanded={showSettings}
+              title="Settings"
+              onClick={() => setShowSettings((v) => !v)}
+            >
+              &#9881;
+            </button>
           </div>
           <div className="nb-panel__body">
             <p style={{ fontSize: "0.85rem" }}>
               Upload an RNA structure (<span className="nb-mono">.pdb</span>,{" "}
-              or <span className="nb-mono">.cif</span>), or fetch one straight
+              or <span className="nb-mono">.cif</span>), or fetch one
               from RCSB by its PDB code. It's cleaned with PDBFixer, filtered
               down to only nucleic-acid residues. We then run the spocker
               pocket detection algorithm.
             </p>
+
+            {showSettings && (
+              <div style={{ border: "3px solid #000", padding: "0.75rem", marginTop: "1rem" }}>
+                <label className="nb-label" htmlFor="downscale-input">
+                  Viewer grid resolution
+                </label>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {DOWNSCALE_OPTIONS.map((factor) => (
+                    <button
+                      key={factor}
+                      type="button"
+                      id={factor === DOWNSCALE_OPTIONS[0] ? "downscale-input" : undefined}
+                      className={`nb-btn nb-btn--sm ${displayDownscale === factor ? "is-pressed" : ""}`}
+                      style={{ flex: 1 }}
+                      onClick={() => setDisplayDownscale(factor)}
+                    >
+                      {(PIPELINE_GRID_A * factor).toFixed(2)}A
+                    </button>
+                  ))}
+                </div>
+                <p className="nb-mono" style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: "0.4rem", marginBottom: 0 }}>
+                  Grid spacing used for the 3D viewer only. Coarser is faster
+                  to load and to move the isovalue slider on. The pipeline
+                  always computes, stores and lets you download the full grids.
+                </p>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: "0.4rem", marginTop: "1rem" }}>
               <button
@@ -182,12 +233,17 @@ export default function InputPage() {
                     value={pdbCode}
                     onChange={(e) => {
                       setError(null);
+                      setChain("");
                       setPdbCode(e.target.value);
                     }}
                   />
-                  <p className="nb-mono" style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: "0.4rem" }}>
-                    Downloaded directly from files.rcsb.org.
-                  </p>
+                  <ChainPicker
+                    status={chains.status}
+                    chains={chains.chains}
+                    error={chains.error}
+                    value={chain}
+                    onChange={setChain}
+                  />
                 </div>
               )}
 
@@ -306,6 +362,120 @@ export default function InputPage() {
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * Chains in the entry the typed PDB code names, looked up as soon as the
+ * code is complete (see GET /api/pdb/<code>/chains). A code that isn't four
+ * characters yet, an entry RCSB doesn't have, or a failed request all
+ * resolve to "no chains", which just hides the picker -- submitting without
+ * a chain analyzes the whole structure, which is the sensible default
+ * anyway.
+ */
+function usePdbChains(code) {
+  const [state, setState] = useState({ status: "idle", chains: [], error: null });
+
+  useEffect(() => {
+    if (!PDB_CODE_RE.test(code)) {
+      setState({ status: "idle", chains: [], error: null });
+      return undefined;
+    }
+    setState({ status: "loading", chains: [], error: null });
+    // The code is only ever four characters, so this fires roughly once per
+    // entry; the delay is just to skip the intermediate states while
+    // someone corrects a typo.
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      listPdbChains(code)
+        .then((data) => !cancelled && setState({ status: "done", chains: data.chains || [], error: null }))
+        // Reported rather than swallowed: a silent no-op here is
+        // indistinguishable from "this entry has no chains", and the most
+        // likely cause -- a backend too old to have this endpoint -- is
+        // exactly the one worth saying out loud.
+        .catch((err) => !cancelled && setState({ status: "error", chains: [], error: err.message }));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [code]);
+
+  return state;
+}
+
+/** Which chain of a fetched entry to analyze. A single-chain entry has
+ *  nothing to choose, so it just reports what it found -- silence there
+ *  would read as "the lookup didn't work". */
+function ChainPicker({ status, chains, error, value, onChange }) {
+  if (status === "idle") return null;
+
+  if (status === "loading" || status === "error" || chains.length === 0) {
+    return (
+      <p className="nb-mono" style={{ fontSize: "0.7rem", marginTop: "0.6rem" }}>
+        {status === "loading" ? "Looking up chains..." : `Chains unavailable: ${error || "none found"}`}
+      </p>
+    );
+  }
+
+  if (chains.length === 1) {
+    const only = chains[0];
+    return (
+      <p className="nb-mono" style={{ fontSize: "0.7rem", marginTop: "0.6rem" }}>
+        1 chain: {only.id}
+        {only.name ? ` - ${only.name}` : ""}{" "}
+        ({only.nucleic_residues > 0 ? `${only.nucleic_residues} nt` : "no nucleic acid"})
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: "0.8rem" }}>
+      <span className="nb-label">Chain ({chains.length} available)</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+        <button
+          type="button"
+          className={`nb-btn nb-btn--sm ${value === "" ? "is-pressed" : ""}`}
+          onClick={() => onChange("")}
+        >
+          All chains
+        </button>
+        {chains.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={`nb-btn nb-btn--sm ${value === c.id ? "is-pressed" : ""}`}
+            style={{ flexDirection: "column", alignItems: "stretch", gap: "0.2rem", textAlign: "left" }}
+            onClick={() => onChange(c.id)}
+          >
+            <span style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+              <span>Chain {c.id}</span>
+              <span className="nb-mono" style={{ opacity: 0.7, textTransform: "none" }}>
+                {/* The pipeline analyzes nucleic acid only, so a chain with
+                    none of it would come back empty -- say so up front. */}
+                {c.nucleic_residues > 0 ? `${c.nucleic_residues} nt` : "no nucleic acid"}
+              </span>
+            </span>
+            {c.name && (
+              <span
+                style={{
+                  textTransform: "none",
+                  letterSpacing: 0,
+                  fontWeight: 600,
+                  fontSize: "0.68rem",
+                  lineHeight: 1.4,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {c.name}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

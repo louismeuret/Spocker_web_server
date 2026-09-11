@@ -23,8 +23,12 @@ from . import config
 _POCKET_ID_RE = re.compile(r"^pocket_\d+$")
 
 # Matches FIELD_NAMES in backend/serve_pockets.py -- the fixed set of raw
-# field grids it may persist under <job_dir>/fields/.
-_FIELD_NAMES = {"stacking", "hydrophobic", "hbdonors", "hbacceptors", "apbs"}
+# field grids it may persist -- plus the two APBS sign halves it derives per
+# pocket (see its _display_grids).
+_FIELD_NAMES = {
+    "stacking", "hydrophobic", "hbdonors", "hbacceptors", "apbs",
+    "apbs_neg", "apbs_pos",
+}
 
 
 def new_job_id():
@@ -73,13 +77,16 @@ def _atomic_write_json(path, data):
         raise
 
 
-def create_job(job_id, original_filename, input_ext):
+def create_job(job_id, original_filename, input_ext, display_downscale=None):
     os.makedirs(job_dir(job_id), exist_ok=True)
     now = now_iso()
     meta = {
         "id": job_id,
         "filename": original_filename,
         "input_ext": input_ext,
+        # Viewer-only grid downscale factor, chosen on the upload page. Kept
+        # on the job because the pipeline is what writes the display grids.
+        "display_downscale": display_downscale or config.DEFAULT_DISPLAY_DOWNSCALE,
         "status": "queued",  # queued -> running -> done | error
         "stage": "Waiting in queue",
         "progress": 0,
@@ -148,12 +155,25 @@ def fields_dir(job_id):
     return os.path.join(job_dir(job_id), "fields")
 
 
+def _prefer_display(path):
+    """Swap in the downscaled "<name>.display.mrc" companion serve_pockets.py
+    writes next to each grid, when it exists. These paths exist only to feed
+    the 3D viewer, and the smaller grid is both quicker to ship and much
+    quicker to re-triangulate when the isovalue slider moves. Downloads walk
+    the job directory directly (see routes.download_job) and keep the
+    originals."""
+    if path is None:
+        return None
+    display = path[: -len(".mrc")] + ".display.mrc"
+    return display if os.path.isfile(display) else path
+
+
 def pocket_volume_path(job_id, pocket_id):
     """Path to a single pocket's MRC volume grid (see
     backend/serve_pockets.py, which writes these)."""
     if not _valid_pocket(pocket_id):
         return None
-    return os.path.join(pockets_dir(job_id), f"{pocket_id}.mrc")
+    return _prefer_display(os.path.join(pockets_dir(job_id), f"{pocket_id}.mrc"))
 
 
 def field_volume_path(job_id, field_name):
@@ -161,7 +181,7 @@ def field_volume_path(job_id, field_name):
     backend/serve_pockets.py, which writes these)."""
     if field_name not in _FIELD_NAMES:
         return None
-    return os.path.join(fields_dir(job_id), f"{field_name}.mrc")
+    return _prefer_display(os.path.join(fields_dir(job_id), f"{field_name}.mrc"))
 
 
 def pocket_field_volume_path(job_id, pocket_id, field_name):
@@ -170,7 +190,7 @@ def pocket_field_volume_path(job_id, pocket_id, field_name):
     field_within_pocket, which writes these)."""
     if not _valid_pocket(pocket_id) or field_name not in _FIELD_NAMES:
         return None
-    return os.path.join(pockets_dir(job_id), pocket_id, "fields", f"{field_name}.mrc")
+    return _prefer_display(os.path.join(pockets_dir(job_id), pocket_id, "fields", f"{field_name}.mrc"))
 
 
 def list_jobs(limit=100):

@@ -1,9 +1,5 @@
 """
-Fetches a structure straight from RCSB by its 4-character PDB code, so the
-frontend can offer "just type a PDB code" as an alternative to uploading a
-file. Uses stdlib urllib only -- this is one small HTTP GET, not worth an
-extra dependency in the app's own tiny venv (see spocker_bridge.py's docstring
-for why the heavy pipeline deps stay in a separate Conda env).
+Fetches a structure from RCSB by its PDB code
 """
 import re
 import urllib.error
@@ -11,6 +7,14 @@ import urllib.request
 
 PDB_ID_RE = re.compile(r"^[0-9][A-Za-z0-9]{3}$")
 RCSB_URL_TEMPLATE = "https://files.rcsb.org/download/{code}.pdb"
+
+_COMPND_TOKEN_RE = re.compile(r"(MOLECULE|CHAIN):\s*([^;]*)", re.IGNORECASE)
+
+_NUCLEIC_RESNAMES = {
+    "A", "C", "G", "U", "I",
+    "DA", "DC", "DG", "DT", "DI",
+    "ADE", "CYT", "GUA", "URI",
+}
 
 
 class PdbFetchError(RuntimeError):
@@ -28,7 +32,6 @@ def validate_pdb_code(code):
 
 
 def fetch_pdb(code, timeout=20):
-    """Returns the raw .pdb file bytes for `code`, or raises PdbFetchError."""
     url = RCSB_URL_TEMPLATE.format(code=code)
     req = urllib.request.Request(url, headers={"User-Agent": "spocker-web/1.0"})
     try:
@@ -40,3 +43,48 @@ def fetch_pdb(code, timeout=20):
         raise PdbFetchError(f"RCSB returned HTTP {exc.code} for '{code}'") from exc
     except urllib.error.URLError as exc:
         raise PdbFetchError(f"Could not reach RCSB to download '{code}': {exc.reason}") from exc
+
+
+def list_chains(structure_bytes: bytes) -> list:
+    names = _chain_names(structure_bytes)
+    chains = {}
+    for line in structure_bytes.split(b"\n"):
+        if not line.startswith((b"ATOM", b"HETATM")):
+            continue
+        try:
+            chain_id = line[21:22].decode("ascii", "replace").strip() or "A"
+            resname = line[17:20].decode("ascii", "replace").strip().upper()
+            residue = line[22:27]  # resSeq + iCode, the whole residue key
+        except IndexError:
+            continue
+        chain = chains.setdefault(chain_id, {"id": chain_id, "name": names.get(chain_id, ""), "seen": set(), "nucleic": set()})
+        chain["seen"].add(residue)
+        if resname in _NUCLEIC_RESNAMES:
+            chain["nucleic"].add(residue)
+
+    return [
+        {
+            "id": c["id"],
+            "name": c["name"],
+            "residues": len(c["seen"]),
+            "nucleic_residues": len(c["nucleic"]),
+        }
+        for c in chains.values()
+    ]
+
+
+def _chain_names(structure_bytes: bytes) -> dict:
+    names = {}
+    molecule = ""
+    for line in structure_bytes.split(b"\n"):
+        if not line.startswith(b"COMPND"):
+            continue
+        text = line[10:].decode("ascii", "replace")
+        for key, value in _COMPND_TOKEN_RE.findall(text):
+            if key.upper() == "MOLECULE":
+                molecule = value.strip()
+            else:
+                for chain_id in (c.strip() for c in value.split(",")):
+                    if chain_id:
+                        names[chain_id] = molecule
+    return names
