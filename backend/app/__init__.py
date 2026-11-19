@@ -8,7 +8,7 @@ from . import config, worker
 FRONTEND_DIST = os.path.normpath(os.path.join(config.BASE_DIR, "..", "frontend", "dist"))
 
 
-def create_app(debug=False):
+def create_app(debug=False, *args, **kwargs):
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = config.MAX_CONTENT_LENGTH
     app.debug = debug

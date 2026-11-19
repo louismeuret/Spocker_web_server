@@ -15,6 +15,12 @@ const DOWNSCALE_OPTIONS = [1, 2, 4, 8];
 const DEFAULT_DOWNSCALE = 2;
 const PIPELINE_GRID_A = 0.25;
 
+// Pocket volume shape; must match backend/app/config.py's POCKET_MODES.
+const POCKET_MODES = [
+  { value: "fluid", label: "Fluid" },
+  { value: "sphere", label: "Sphere" },
+];
+
 export default function InputPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -33,6 +39,7 @@ export default function InputPage() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [displayDownscale, setDisplayDownscale] = useState(DEFAULT_DOWNSCALE);
+  const [pocketMode, setPocketMode] = useState("fluid");
   // "" means every chain, which is both the default and what an uploaded
   // file always gets (the picker is only offered for PDB codes).
   const [chain, setChain] = useState("");
@@ -69,8 +76,8 @@ export default function InputPage() {
     try {
       const job =
         mode === "code"
-          ? await createJob({ pdbCode: trimmedCode, displayDownscale, chain, ...extra })
-          : await createJob({ file, displayDownscale, ...extra });
+          ? await createJob({ pdbCode: trimmedCode, displayDownscale, pocketMode, chain, ...extra })
+          : await createJob({ file, displayDownscale, pocketMode, ...extra });
 
       if (job.needs_model_selection) {
         setPendingModels(job.models);
@@ -157,6 +164,28 @@ export default function InputPage() {
                   Grid spacing used for the 3D viewer only. Coarser is faster
                   to load and to move the isovalue slider on. The pipeline
                   always computes, stores and lets you download the full grids.
+                </p>
+
+                <label className="nb-label" htmlFor="pocket-mode-input" style={{ marginTop: "0.9rem" }}>
+                  Pocket shape
+                </label>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {POCKET_MODES.map((m, i) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      id={i === 0 ? "pocket-mode-input" : undefined}
+                      className={`nb-btn nb-btn--sm ${pocketMode === m.value ? "is-pressed" : ""}`}
+                      style={{ flex: 1 }}
+                      onClick={() => setPocketMode(m.value)}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="nb-mono" style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: "0.4rem", marginBottom: 0 }}>
+                  Fluid pockets follow the shape of the hotspots; sphere
+                  pockets are built from spheres around them.
                 </p>
               </div>
             )}

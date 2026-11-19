@@ -30,7 +30,7 @@ try:
     )
     _HAVE_RNAPOLIS = True
 except ImportError:
-    _HAVE_RNAPOLIS = True
+    _HAVE_RNAPOLIS = False
 
 
 def _parse_resid(nt_label: str):
@@ -42,6 +42,10 @@ def _parse_resid(nt_label: str):
 
 def _canonical_pair_resids(pdb_path: Path) -> set:
     """Residue sequence numbers involved in a cWW base pair, per RNApolis."""
+    if not _HAVE_RNAPOLIS:
+        print("[WARNING] rnapolis not installed; treating all residues as "
+              "non-canonical.", file=sys.stderr)
+        return set()
 
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = Path(tmp) / "annotation.csv"

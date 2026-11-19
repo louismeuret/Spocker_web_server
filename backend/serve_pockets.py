@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Bridge between Pocket_web_serveur's job worker and the real SPOCKER pipeline
-(./new_spocker/run_pipeline_new_spocker.sh + Script*.py, both in this same
+(./new_spocker/run_pipeline_new_spocker.py + Script*.py, both in this same
 backend/ folder -- see new_spocker/'s own docstrings for why it's fully
 self-contained: no runtime dependency on demo_spocker/ at the repo root, so
 this whole backend/ folder can be moved/deployed on its own).
@@ -63,7 +63,7 @@ from scipy.spatial import cKDTree
 
 BACKEND_DIR = Path(__file__).resolve().parent
 NEW_SPOCKER_DIR = BACKEND_DIR / "new_spocker"
-RUN_PIPELINE_SH = NEW_SPOCKER_DIR / "run_pipeline_new_spocker.sh"
+RUN_PIPELINE = NEW_SPOCKER_DIR / "run_pipeline_new_spocker.py"
 
 # Matches RNA_TRIM_CUTOFF_A in new_spocker/Script8: every voxel of a saved
 # pocket mask is already guaranteed to be within this distance of some RNA
@@ -72,7 +72,7 @@ RUN_PIPELINE_SH = NEW_SPOCKER_DIR / "run_pipeline_new_spocker.sh"
 RNA_LINING_CUTOFF_A = 5.0
 
 # Matches FIELD_NAMES_CSV in new_spocker/Script8 exactly -- both the field
-# grid filenames run_pipeline_new_spocker.sh writes into <out_dir>/fields/
+# grid filenames run_pipeline_new_spocker.py writes into <out_dir>/fields/
 # and the "<name>_ratio" column names in <out_dir>/<id>_field_contributions.csv
 # are keyed by these.
 FIELD_NAMES = ("stacking", "hydrophobic", "hbdonors", "hbacceptors", "apbs")
@@ -86,6 +86,10 @@ FIELD_NAMES = ("stacking", "hydrophobic", "hbdonors", "hbacceptors", "apbs")
 # Set by app/spocker_bridge.py from the job's own setting; 1 disables it.
 DISPLAY_DOWNSCALE = max(1, int(os.environ.get("SPOCKER_DISPLAY_DOWNSCALE") or 2))
 
+# Pocket shape: "fluid" (Script3b, the default) or "sphere" (the original
+# Script3/5 volumes). Set by app/spocker_bridge.py from the job's own setting.
+POCKET_MODE = os.environ.get("SPOCKER_POCKET_MODE") or "fluid"
+
 # Marks a progress line on stderr. Must stay identical to PROGRESS_PREFIX in
 # app/spocker_bridge.py, which is the only reader -- it can't import this
 # module, since the two run in different Python environments.
@@ -95,27 +99,29 @@ PROGRESS_PREFIX = "@@SPOCKER_PROGRESS "
 # (substring to look for in a stdout line, percent, message). The percents
 # span the pipeline's slice of the job; app/worker.py owns everything before
 # and after. Matched in order, first hit wins, unmatched lines are ignored --
-# so a wording change in run_pipeline_new_spocker.sh costs a missed update,
-# never a wrong one.
+# so a wording change in run_pipeline_new_spocker.py costs a missed update,
+# never a wrong one. Stages run in parallel there, so run_pipeline only ever
+# moves progress forward.
 PIPELINE_STAGES = (
-    ("[1/3]", 20, "Generating interaction fields"),
-    ("computing APBS", 24, "Solving electrostatics (APBS)"),
-    ("SMIF field apbs", 28, "Building the APBS grid"),
-    ("SMIF field hphob", 34, "Building the hydrophobic grid"),
-    ("SMIF field stk", 40, "Building the stacking grid"),
-    ("SMIF field hba", 46, "Building the H-bond acceptor grid"),
-    ("SMIF field hbd", 52, "Building the H-bond donor grid"),
-    ("generating hydrogen-bond fields", 56, "Building H-bond fields for non-paired residues"),
-    ("[2/3]", 60, "Finding binding-site hotspots"),
-    ("Running Script1", 62, "Deriving per-field isovalues"),
-    ("Running Script2", 66, "Detecting binding-site hotspots"),
+    ("Running Prepare", 20, "Generating interaction fields"),
+    ("Running Script1", 58, "Deriving per-field isovalues"),
+    ("Running Script6", 60, "Trimming APBS around the RNA"),
+    ("Running Script4", 62, "Detecting H-bond hotspots"),
+    ("Running Script2", 64, "Detecting binding-site hotspots"),
+    ("Running Script7", 66, "Trimming the hydrophobic field"),
+    ("Running Script5", 68, "Building H-bond pocket volumes"),
+    ("Running Script3b", 76, "Building fluid pocket volumes"),
     ("Running Script3", 70, "Building pocket volumes from hotspots"),
-    ("Running Script6", 73, "Trimming APBS around the RNA"),
-    ("Running Script7", 75, "Trimming the hydrophobic field"),
-    ("[3/3]", 78, "Building H-bond pocket volumes"),
-    ("Merging pockets", 84, "Merging pockets and scoring them"),
+    ("Running Script8", 84, "Merging pockets and scoring them"),
     ("Collecting scored", 88, "Collecting the scored field grids"),
 )
+
+# "[fields] SMIF field <key> done" lines from new_spocker/_fields.py; all the
+# grids are built in parallel, so each one finished just nudges progress.
+FIELD_LABELS = {
+    "apbs": "APBS", "hphob": "hydrophobic", "stk": "stacking",
+    "hba": "H-bond acceptor", "hbd": "H-bond donor",
+}
 
 
 class PipelineError(RuntimeError):
@@ -192,13 +198,30 @@ def clean_structure(raw_path: Path, dest_path: Path) -> None:
 
 
 def run_pipeline(processed_pdb: Path, out_dir: Path) -> None:
+    last = 0
+
+    def report(percent, message):
+        nonlocal last
+        if percent > last:
+            last = percent
+            _progress(percent, message)
+
     def relay(line):
+        if "APBS electrostatics done" in line:
+            report(min(last + 4, 52), "Solved electrostatics (APBS)")
+            return
+        if "SMIF field " in line and line.endswith(" done"):
+            key = line.split("SMIF field ", 1)[1].split()[0]
+            subset = " for non-paired residues" if "H-bond subset" in line else ""
+            report(min(last + 4, 52), f"Built the {FIELD_LABELS.get(key, key)} grid{subset}")
+            return
         for marker, percent, message in PIPELINE_STAGES:
             if marker in line:
-                _progress(percent, message)
+                report(percent, message)
                 return
 
-    _run_streaming(["bash", str(RUN_PIPELINE_SH), str(processed_pdb), str(out_dir)], relay)
+    _run_streaming([sys.executable, str(RUN_PIPELINE), str(processed_pdb), str(out_dir),
+                    "--pocket-mode", POCKET_MODE], relay)
 
 
 def _load_mrc(path: Path):
@@ -409,7 +432,7 @@ def build_result(raw_input_path: str, job_dir: str, job_id: str) -> dict:
     processed_pdb = job_dir / "processed.pdb"
     clean_structure(Path(raw_input_path), processed_pdb)
 
-    # run_pipeline_new_spocker.sh derives its internal PDB_ID from the input
+    # run_pipeline_new_spocker.py derives its internal PDB_ID from the input
     # filename's stem -- job_id is a uuid4 hex, so it's already dot-free and
     # doubles as a safe, unique PDB_ID.
     pipeline_input = job_dir / f"{job_id}.pdb"

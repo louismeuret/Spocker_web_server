@@ -24,7 +24,7 @@ async function request(path, options) {
   return body;
 }
 
-export function createJob({ file, pdbCode, model, displayDownscale } = {}) {
+export function createJob({ file, pdbCode, model, displayDownscale, pocketMode } = {}) {
   const formData = new FormData();
   if (pdbCode) formData.append("pdb_code", pdbCode);
   else formData.append("file", file);
@@ -32,6 +32,8 @@ export function createJob({ file, pdbCode, model, displayDownscale } = {}) {
   // Viewer-only grid resolution (see backend/serve_pockets.py's
   // DISPLAY_DOWNSCALE) -- what gets stored and downloaded is unaffected.
   if (displayDownscale != null) formData.append("display_downscale", String(displayDownscale));
+  // "fluid" or "sphere" pocket volumes (backend/app/config.py's POCKET_MODES).
+  if (pocketMode) formData.append("pocket_mode", pocketMode);
   return request("/api/jobs", { method: "POST", body: formData });
 }
 

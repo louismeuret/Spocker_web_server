@@ -21,3 +21,8 @@ NUM_WORKERS = 1
 # affects what is displayed -- stored and downloaded grids are untouched.
 DEFAULT_DISPLAY_DOWNSCALE = 2
 MAX_DISPLAY_DOWNSCALE = 8
+
+# Pocket volume shape, chosen per job on the upload page (see
+# serve_pockets.py's POCKET_MODE): "fluid" (Script3b) or "sphere" (Script3/5).
+POCKET_MODES = ("fluid", "sphere")
+DEFAULT_POCKET_MODE = "fluid"

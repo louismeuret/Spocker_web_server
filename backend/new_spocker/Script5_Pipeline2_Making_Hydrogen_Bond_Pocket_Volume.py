@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 
 import numpy as np
+
+import _bgwrite
 import mrcfile
 from scipy.ndimage import label
 
@@ -68,6 +70,11 @@ def load_mrc(path):
 
 
 def save_mrc(out_path, data_3d, vs, origin):
+    """Writes in the background (_bgwrite) from a private float32 copy."""
+    _bgwrite.submit(_save_mrc_now, out_path, np.array(data_3d, dtype=np.float32), vs, origin)
+
+
+def _save_mrc_now(out_path, data_3d, vs, origin):
     data_3d      = data_3d.astype(np.float32)
     nz, ny, nx   = data_3d.shape
     nonzero_vals = data_3d[data_3d != 0.0]

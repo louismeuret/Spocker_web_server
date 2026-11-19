@@ -37,7 +37,7 @@ def _resolve_model_selection(raw_bytes, requested_model):
     return structure_models.extract_model(raw_bytes, requested_model), None
 
 
-def _create_job(original_filename, ext, raw_bytes, requested_model, display_downscale, chain=None):
+def _create_job(original_filename, ext, raw_bytes, requested_model, display_downscale, pocket_mode, chain=None):
     """Resolves the model choice first, so a structure that still needs one
     never leaves a job dir behind, then queues the job."""
     try:
@@ -61,6 +61,7 @@ def _create_job(original_filename, ext, raw_bytes, requested_model, display_down
         original_filename=original_filename,
         input_ext=ext,
         display_downscale=display_downscale,
+        pocket_mode=pocket_mode,
     )
     with open(jobs_store.input_file_path(job_id), "wb") as f:
         f.write(final_bytes)
@@ -69,7 +70,7 @@ def _create_job(original_filename, ext, raw_bytes, requested_model, display_down
     return jsonify(jobs_store.read_meta(job_id)), 201
 
 
-def _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, chain):
+def _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, pocket_mode, chain):
     """Downloads the structure from RCSB before creating any job record, so
     an invalid code or an RCSB miss never leaves behind a broken job dir --
     same immediate-feedback behaviour as the "no file selected" case below."""
@@ -83,7 +84,7 @@ def _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, chai
     except pdb_fetch.PdbFetchError as exc:
         return jsonify({"error": str(exc)}), 502
 
-    return _create_job(f"{code}.pdb", ".pdb", pdb_bytes, requested_model, display_downscale, chain)
+    return _create_job(f"{code}.pdb", ".pdb", pdb_bytes, requested_model, display_downscale, pocket_mode, chain)
 
 
 @api.post("/jobs")
@@ -104,12 +105,16 @@ def create_job():
     if not 1 <= display_downscale <= config.MAX_DISPLAY_DOWNSCALE:
         return jsonify({"error": f"display_downscale must be 1-{config.MAX_DISPLAY_DOWNSCALE}"}), 400
 
+    pocket_mode = request.form.get("pocket_mode") or config.DEFAULT_POCKET_MODE
+    if pocket_mode not in config.POCKET_MODES:
+        return jsonify({"error": f"pocket_mode must be one of {', '.join(config.POCKET_MODES)}"}), 400
+
     # Empty means "all chains" (see GET /api/pdb/<code>/chains).
     chain = (request.form.get("chain") or "").strip()
 
     pdb_code = (request.form.get("pdb_code") or "").strip()
     if pdb_code:
-        return _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, chain)
+        return _create_job_from_pdb_code(pdb_code, requested_model, display_downscale, pocket_mode, chain)
 
     file = request.files.get("file")
     if file is None or file.filename == "":
@@ -128,7 +133,7 @@ def create_job():
             400,
         )
 
-    return _create_job(original_name, ext, file.read(), requested_model, display_downscale, chain)
+    return _create_job(original_name, ext, file.read(), requested_model, display_downscale, pocket_mode, chain)
 
 
 @api.get("/pdb/<pdb_code>/chains")

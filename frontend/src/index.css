@@ -464,11 +464,34 @@ textarea {
 
 .nb-hand__fill {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--nb-black);
-  transition: height 300ms ease-out;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: clip-path 300ms ease-out;
+}
+
+.nb-hand__spiral {
+  animation: nb-galaxy-spin 24s linear infinite;
+}
+
+.nb-hand__star {
+  fill: #fff;
+  animation: nb-galaxy-twinkle 3s ease-in-out infinite;
+}
+
+@keyframes nb-galaxy-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nb-galaxy-twinkle {
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-hand__spiral,
+  .nb-hand__star {
+    animation: none;
+  }
 }
 
 .nb-hand__value {

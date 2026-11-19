@@ -29,7 +29,11 @@ hbd, as separate calls, for the same reason.
 """
 
 import shutil
+import importlib.util
+import os
 import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # One entry per field: which SMIF_* flag must be true, and which must be
@@ -65,8 +69,16 @@ class FieldGenerationError(RuntimeError):
     pass
 
 
-def _run(cmd, cwd):
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+# `volgrids` through _volgrids_fast.py: same CLI and results, faster Grid.reshape.
+VOLGRIDS = [sys.executable, str(Path(__file__).resolve().parent / "_volgrids_fast.py")]
+
+
+def _run(cmd, cwd, env=None):
+    if cmd[0] == "volgrids":
+        cmd = VOLGRIDS + cmd[1:]
+    if env:
+        env = {**os.environ, **env}
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         raise FieldGenerationError(
             f"Command failed: {' '.join(cmd)}\n{result.stdout}\n{result.stderr}"
@@ -90,21 +102,6 @@ def prepare_workdir(pdb_path: Path, work_dir: Path) -> Path:
     return local_path
 
 
-# The calls below are minutes of work each, so they announce themselves on
-# stdout. The caller's caller turns those lines into job progress -- see the
-# PIPELINE_STAGES table in backend/serve_pockets.py, which matches on this
-# exact "SMIF field <key>" wording.
-def compute_apbs(local_pdb: Path) -> Path:
-    """Precompute the APBS potential once, for reuse (via -a) by every
-    subsequent per-field smiffer call below."""
-    print("[fields] computing APBS electrostatics", flush=True)
-    _run(["volgrids", "apbs", local_pdb.name, "--mrc"], cwd=local_pdb.parent)
-    apbs_cache = local_pdb.parent / f"{local_pdb.name}.mrc"
-    if not apbs_cache.exists():
-        raise FieldGenerationError(f"APBS cache not produced: {apbs_cache}")
-    return apbs_cache
-
-
 def compute_non_canonical_indices(local_pdb: Path) -> str:
     """Run volgrids' own `smutils res_nobp` to get the non-base-paired
     residue index string (space-separated "chain.resid" tokens). Returns
@@ -113,44 +110,64 @@ def compute_non_canonical_indices(local_pdb: Path) -> str:
     return result.stdout.strip()
 
 
-def compute_whole_structure_fields(local_pdb: Path, apbs_cache: Path, out_dir: Path) -> dict:
-    """Issues one separate `smiffer` call per field type (see module
-    docstring for why this is required -- combining fields in one call
-    corrupts stk/hba/hbd). Each call writes to its own subfolder to avoid
-    any risk of one call's intermediate files being picked up by another."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = {}
-    total = len(WHOLE_STRUCTURE_FIELD_FLAGS)
-    for i, (field, flags) in enumerate(WHOLE_STRUCTURE_FIELD_FLAGS.items(), 1):
-        print(f"[fields] SMIF field {field} ({i}/{total})", flush=True)
-        field_out = out_dir / field
-        field_out.mkdir(parents=True, exist_ok=True)
-        cmd = ["volgrids", "smiffer", local_pdb.name, "-a", str(apbs_cache), "-o", str(field_out)]
-        cmd += _config_args(flags)
-        _run(cmd, cwd=local_pdb.parent)
-        candidate = field_out / f"{local_pdb.stem}.{field}.mrc"
-        if candidate.exists():
-            paths[FIELD_NAME_MAP[field]] = candidate
-    return paths
+def _smiffer_one(local_pdb: Path, field: str, flags: dict, out_dir: Path, extra: list, env=None) -> Path:
+    field_out = out_dir / field
+    field_out.mkdir(parents=True, exist_ok=True)
+    cmd = ["volgrids", "smiffer", local_pdb.name, *extra, "-o", str(field_out)] + _config_args(flags)
+    _run(cmd, cwd=local_pdb.parent, env=env)
+    # Turned into job progress by backend/serve_pockets.py's relay, which
+    # matches on this "SMIF field <key> done" wording.
+    print(f"[fields] SMIF field {field}{' (H-bond subset)' if '-r' in extra else ''} done", flush=True)
+    return field_out / f"{local_pdb.stem}.{field}.mrc"
 
 
-def compute_hbond_subset_fields(local_pdb: Path, indices: str, out_dir: Path) -> dict:
-    """`indices` must be the raw output string of compute_non_canonical_indices,
-    passed whole to `-r`. Issues separate calls for hba and hbd (see module
-    docstring)."""
-    if not indices:
-        return {}
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = {}
-    total = len(HBOND_SUBSET_FIELD_FLAGS)
-    for i, (field, flags) in enumerate(HBOND_SUBSET_FIELD_FLAGS.items(), 1):
-        print(f"[fields] H-bond subset field {field} ({i}/{total})", flush=True)
-        field_out = out_dir / field
-        field_out.mkdir(parents=True, exist_ok=True)
-        cmd = ["volgrids", "smiffer", local_pdb.name, "-r", indices, "-o", str(field_out)]
-        cmd += _config_args(flags)
-        _run(cmd, cwd=local_pdb.parent)
-        candidate = field_out / f"{local_pdb.stem}.{field}.mrc"
-        if candidate.exists():
-            paths[FIELD_NAME_MAP[field]] = candidate
-    return paths
+# volgrids runs in-process with this interpreter (VOLGRIDS above), not from PATH.
+_spec = importlib.util.find_spec("volgrids")
+if _spec is None:
+    sys.exit(f"volgrids is not installed for {sys.executable}: run with the "
+             "SPockeR conda env's python (`conda activate SPockeR`).")
+APBS_SH = Path(_spec.submodule_search_locations[0]) / "apbs" / "apbs.sh"
+
+
+def compute_apbs_dx(local_pdb: Path, done: Path) -> Path:
+    """`volgrids apbs <pdb> --mrc` is `apbs.sh <pdb> --mrc`. Here apbs.sh
+    runs without --mrc; its last step (DX -> MRC conversion) is done by the
+    waiting apbs-field smiffer process (see _volgrids_fast.py). `done` is
+    created even on failure, so that process stops waiting (and fails on the
+    empty placeholder cache)."""
+    try:
+        _run(["bash", str(APBS_SH), local_pdb.name], cwd=local_pdb.parent)
+        print("[fields] APBS electrostatics done", flush=True)
+        return local_pdb.parent / f"{local_pdb.name}.dx"
+    finally:
+        done.touch()
+
+
+def compute_all_fields(local_pdb: Path, whole_dir: Path, hbond_dir: Path):
+    """Every volgrids call needed for one structure (APBS, one smiffer call
+    per whole-structure field, res_nobp, one smiffer call per HBond-subset
+    field), run in parallel. Only the apbs field reads the APBS cache: the hphob/stk/hba/hbd
+    smiffer calls give bit-identical grids without -a (checked on 1AJU), so
+    they don't wait for APBS. The apbs-field smiffer call starts right away
+    too, and only waits for the APBS grid when it actually reads it
+    (VOLGRIDS_APBS_DONE, see _volgrids_fast.py).
+    Returns (whole-structure paths, indices string, hbond-subset paths)."""
+    cache = local_pdb.parent / f"{local_pdb.name}.mrc"
+    done = local_pdb.parent / "apbs.done"
+    cache.touch()  # placeholder: smiffer checks that the -a path exists
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        apbs = pool.submit(compute_apbs_dx, local_pdb, done)
+        indices = pool.submit(compute_non_canonical_indices, local_pdb)
+        whole = {f: pool.submit(_smiffer_one, local_pdb, f, flags, whole_dir, [])
+                 for f, flags in WHOLE_STRUCTURE_FIELD_FLAGS.items() if f != "apbs"}
+        whole["apbs"] = pool.submit(_smiffer_one, local_pdb, "apbs", WHOLE_STRUCTURE_FIELD_FLAGS["apbs"],
+                                    whole_dir, ["-a", str(cache)],
+                                    {"VOLGRIDS_APBS_DONE": str(done),
+                                     "VOLGRIDS_APBS_DX": str(local_pdb.parent / f"{local_pdb.name}.dx")})
+        idx = indices.result()
+        hb = ({f: pool.submit(_smiffer_one, local_pdb, f, flags, hbond_dir, ["-r", idx])
+               for f, flags in HBOND_SUBSET_FIELD_FLAGS.items()} if idx else {})
+        apbs.result()
+        whole_paths = {FIELD_NAME_MAP[f]: p for f, fut in whole.items() if (p := fut.result()).exists()}
+        hb_paths = {FIELD_NAME_MAP[f]: p for f, fut in hb.items() if (p := fut.result()).exists()}
+    return whole_paths, idx, hb_paths

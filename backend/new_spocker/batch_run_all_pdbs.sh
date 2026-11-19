@@ -5,7 +5,7 @@
 # For each <id>.pdb found in <pdb_directory>:
 #   1. Runs 0_fix_pdb.sh to produce a cleaned/fixed structure, saved to
 #      ../data/fixed_pdbs/<id>_fixed.pdb
-#   2. Runs run_pipeline_new_spocker.sh on the fixed structure, saving
+#   2. Runs run_pipeline_new_spocker.py on the fixed structure, saving
 #      final ranked pockets to ../Analysis_Unique_Pockets_<id>/
 #
 # Any PDB that fails at either step is logged (with the reason) to
@@ -71,9 +71,9 @@ for pdb in "${PDB_FILES[@]}"; do
         continue
     fi
 
-    if ! bash run_pipeline_new_spocker.sh "$fixed" "../Analysis_Unique_Pockets_${id}"; then
-        echo "!!! $id: run_pipeline_new_spocker.sh failed"
-        echo "$id  (run_pipeline_new_spocker.sh failed)" >> "$FAILED_LOG"
+    if ! python3 run_pipeline_new_spocker.py "$fixed" "../Analysis_Unique_Pockets_${id}"; then
+        echo "!!! $id: run_pipeline_new_spocker.py failed"
+        echo "$id  (run_pipeline_new_spocker.py failed)" >> "$FAILED_LOG"
         FAILED=$((FAILED + 1))
         continue
     fi

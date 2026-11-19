@@ -172,8 +172,7 @@ def write_mrc(path: Path, data: np.ndarray, voxel: np.ndarray, origin: np.ndarra
             mrc.header.origin.z = float(origin[2])
         except Exception:
             pass
-        mrc.update_header_from_data()
-        mrc.update_header_stats()
+        mrc.update_header_from_data()  # stats already computed by set_data
 
 # =============================================================================
 # KD-TREE MASK BUILDER (UNCHANGED)

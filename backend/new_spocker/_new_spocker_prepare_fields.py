@@ -47,17 +47,15 @@ def main():
 
     field_work = work_dir / "_field_generation"
     local_pdb = fields.prepare_workdir(pdb_path, field_work)
-    apbs_cache = fields.compute_apbs(local_pdb)
 
-    print(f"[prepare-fields] generating whole-structure fields for {pdb_id}")
-    whole_paths = fields.compute_whole_structure_fields(local_pdb, apbs_cache, field_work / "whole")
+    print(f"[prepare-fields] generating fields for {pdb_id} (all volgrids calls in parallel)")
+    whole_paths, indices, hb_paths = fields.compute_all_fields(
+        local_pdb, field_work / "whole", field_work / "hbond")
     _place(whole_paths, fields1_dir, pdb_id)
 
-    indices = fields.compute_non_canonical_indices(local_pdb)
     if indices:
         n = len(indices.split())
-        print(f"[prepare-fields] generating hydrogen-bond fields for {n} non-base-paired residue(s): {indices}")
-        hb_paths = fields.compute_hbond_subset_fields(local_pdb, indices, field_work / "hbond")
+        print(f"[prepare-fields] hydrogen-bond fields for {n} non-base-paired residue(s): {indices}")
         _place(hb_paths, fields2_dir, pdb_id)
 
         # HBond-subset call produces no APBS field of its own (SMIF_APBS=false

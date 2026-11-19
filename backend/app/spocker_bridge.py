@@ -161,7 +161,7 @@ def _run_reporting_progress(cmd, env, on_progress):
 
 
 def run_pocket_detection(job_id: str, input_path: str, job_dir: str, display_downscale=None,
-                         on_progress=None) -> dict:
+                         pocket_mode=None, on_progress=None) -> dict:
     if not SERVE_SCRIPT.exists():
         raise PocketDetectionError(f"Bridge script not found: {SERVE_SCRIPT}")
 
@@ -171,6 +171,8 @@ def run_pocket_detection(job_id: str, input_path: str, job_dir: str, display_dow
     # serve_pockets.py's DISPLAY_DOWNSCALE). The pipeline's own grids are
     # unaffected.
     env["SPOCKER_DISPLAY_DOWNSCALE"] = str(display_downscale or config.DEFAULT_DISPLAY_DOWNSCALE)
+    # Fluid or sphere pocket volumes (see serve_pockets.py's POCKET_MODE).
+    env["SPOCKER_POCKET_MODE"] = pocket_mode or config.DEFAULT_POCKET_MODE
 
     stdout, stderr, returncode = _run_reporting_progress(
         [python, str(SERVE_SCRIPT), str(input_path), str(job_dir), job_id], env, on_progress

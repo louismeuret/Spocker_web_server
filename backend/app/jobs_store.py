@@ -77,7 +77,7 @@ def _atomic_write_json(path, data):
         raise
 
 
-def create_job(job_id, original_filename, input_ext, display_downscale=None):
+def create_job(job_id, original_filename, input_ext, display_downscale=None, pocket_mode=None):
     os.makedirs(job_dir(job_id), exist_ok=True)
     now = now_iso()
     meta = {
@@ -87,6 +87,7 @@ def create_job(job_id, original_filename, input_ext, display_downscale=None):
         # Viewer-only grid downscale factor, chosen on the upload page. Kept
         # on the job because the pipeline is what writes the display grids.
         "display_downscale": display_downscale or config.DEFAULT_DISPLAY_DOWNSCALE,
+        "pocket_mode": pocket_mode or config.DEFAULT_POCKET_MODE,
         "status": "queued",  # queued -> running -> done | error
         "stage": "Waiting in queue",
         "progress": 0,

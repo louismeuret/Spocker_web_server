@@ -19,9 +19,11 @@ import os
 from pathlib import Path
 
 import numpy as np
+
+import _bgwrite
 import mrcfile
 from scipy.ndimage import label, binary_dilation
-from scipy.interpolate import RegularGridInterpolator
+from _volgrids_fast import interpolate_tensor
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PARAMETERS (UNCHANGED)
@@ -79,6 +81,11 @@ def load_mrc(path):
 
 
 def save_mrc(out_path, data_3d, vs, origin):
+    """Writes in the background (_bgwrite) from a private float32 copy."""
+    _bgwrite.submit(_save_mrc_now, out_path, np.array(data_3d, dtype=np.float32), vs, origin)
+
+
+def _save_mrc_now(out_path, data_3d, vs, origin):
     data_3d      = data_3d.astype(np.float32)
     nz, ny, nx   = data_3d.shape
     nonzero_vals = data_3d[data_3d != 0.0]
@@ -127,19 +134,11 @@ def resample_to_master(src_data, src_vs, src_origin,
             np.allclose(ref_vs, src_vs, atol=1e-4))
     if same:
         return src_data.copy()
-    xa_r, ya_r, za_r = make_axes(ref_data, ref_vs, ref_origin)
-    xa_s, ya_s, za_s = make_axes(src_data, src_vs, src_origin)
-    interp = RegularGridInterpolator(
-        (za_s, ya_s, xa_s),
-        src_data.astype(np.float64),
-        method='linear',
-        bounds_error=False,
-        fill_value=0.0
-    )
-    zz, yy, xx = np.meshgrid(za_r, ya_r, xa_r, indexing='ij')
-    pts    = np.stack([zz.ravel(), yy.ravel(), xx.ravel()], axis=1)
-    result = interp(pts).reshape(nz_r, ny_r, nx_r).astype(np.float32)
-    return result
+    # Same result as RegularGridInterpolator(method='linear', bounds_error=False,
+    # fill_value=0.0) on every ref grid point, bit-identical but much faster.
+    axes_r = make_axes(ref_data, ref_vs, ref_origin)[::-1]   # z, y, x
+    axes_s = make_axes(src_data, src_vs, src_origin)[::-1]
+    return interpolate_tensor(axes_s, src_data, axes_r).astype(np.float32)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +184,15 @@ def dilate_mask(mask_3d, expand_voxels):
     if expand_voxels <= 0:
         return mask_3d.copy()
     struct = np.ones((2 * expand_voxels + 1,) * 3, dtype=bool)
-    return binary_dilation(mask_3d, structure=struct)
+    # Only the bounding box grown by expand_voxels can change: dilate that.
+    nz = [np.flatnonzero(mask_3d.any(axis=ax)) for ax in ((1, 2), (0, 2), (0, 1))]
+    out = np.zeros_like(mask_3d, dtype=bool)
+    if len(nz[0]) == 0:
+        return out
+    box = tuple(slice(max(a[0] - expand_voxels, 0), min(a[-1] + 1 + expand_voxels, n))
+                for a, n in zip(nz, mask_3d.shape))
+    out[box] = binary_dilation(mask_3d[box], structure=struct)
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -226,12 +233,17 @@ def make_marker_mrc(centroid_a, vs, origin, grid_shape,
     ci_x = (centroid_a[0] - origin[0]) / vs[0]
     ci_y = (centroid_a[1] - origin[1]) / vs[1]
     ci_z = (centroid_a[2] - origin[2]) / vs[2]
-    iz, iy, ix = np.mgrid[0:nz, 0:ny, 0:nx]
-    dist2 = ((ix - ci_x) ** 2 +
-             (iy - ci_y) ** 2 +
-             (iz - ci_z) ** 2)
-    marker_data = np.where(dist2 <= radius_voxels ** 2,
-                           1.0, 0.0).astype(np.float32)
+    # Only the window |i - ci| <= radius can be inside the sphere.
+    win = tuple(slice(max(int(np.floor(c - radius_voxels)), 0), min(int(np.ceil(c + radius_voxels)) + 1, n))
+                for c, n in ((ci_z, nz), (ci_y, ny), (ci_x, nx)))
+    marker_data = np.zeros(grid_shape, dtype=np.float32)
+    if all(w.start < w.stop for w in win):
+        iz, iy, ix = np.mgrid[win]
+        dist2 = ((ix - ci_x) ** 2 +
+                 (iy - ci_y) ** 2 +
+                 (iz - ci_z) ** 2)
+        marker_data[win] = np.where(dist2 <= radius_voxels ** 2,
+                                    1.0, 0.0).astype(np.float32)
     n_sphere = int(marker_data.sum())
     print(f"    Marker sphere: centroid_vox=({ci_x:.1f},{ci_y:.1f},{ci_z:.1f})  "
           f"radius={radius_voxels} vox  filled={n_sphere:,} voxels")
@@ -244,10 +256,11 @@ def make_marker_mrc(centroid_a, vs, origin, grid_shape,
 
 def build_full_overlap_mask(ele_mask, hba_mask, hbd_mask,
                             expand=OVERLAP_EXPAND_VOXELS):
-    d_ele = dilate_mask(ele_mask, expand)
+    # dilate(ele) & ele == ele (the structure contains its centre), so the
+    # large ELE mask never needs dilating.
     d_hba = dilate_mask(hba_mask, expand)
     d_hbd = dilate_mask(hbd_mask, expand)
-    return d_ele & d_hba & d_hbd & ele_mask
+    return ele_mask & d_hba & d_hbd
 
 
 def find_overlap_clusters(overlap_mask, vs, origin,
@@ -270,10 +283,11 @@ def find_overlap_clusters(overlap_mask, vs, origin,
     print(f"    Connected overlap components found: {n_labels}")
 
     candidates = []
+    sizes = np.bincount(labeled_overlap.ravel(), minlength=n_labels + 1)
     for sid in range(1, n_labels + 1):
-        core_mask_i = labeled_overlap == sid
-        nvox        = int(core_mask_i.sum())
+        nvox = int(sizes[sid])
         if nvox >= min_voxels:
+            core_mask_i = labeled_overlap == sid
             centroid = mask_centroid_angstrom(core_mask_i, vs, origin)
             candidates.append((nvox, core_mask_i, centroid, sid))
 

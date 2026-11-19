@@ -4,6 +4,8 @@ import shlex
 
 import mrcfile
 import numpy as np
+
+import _bgwrite
 from scipy import ndimage
 from scipy.ndimage import label as scipy_label
 
@@ -23,6 +25,16 @@ POCKET_SPECS = [
         "tag":    "stk_hpb_second",
         "suffix": ".stacking_hydrophobic_second_pocket.mrc",
         "label":  "second STK-HPb pocket",
+    },
+    {
+        "tag":    "stk_hpb_third",
+        "suffix": ".stacking_hydrophobic_third_pocket.mrc",
+        "label":  "third STK-HPb pocket",
+    },
+    {
+        "tag":    "stk_hpb_fourth",
+        "suffix": ".stacking_hydrophobic_fourth_pocket.mrc",
+        "label":  "fourth STK-HPb pocket",
     },
     {
         "tag":    "stk_ele",
@@ -136,6 +148,11 @@ def load_mrc(path):
 
 
 def save_mask_as_mrc(mask, ref_path, out_path):
+    """Writes in the background (_bgwrite) from a private float32 copy."""
+    _bgwrite.submit(_save_mask_as_mrc_now, mask.astype(np.float32), ref_path, out_path)
+
+
+def _save_mask_as_mrc_now(mask, ref_path, out_path):
     with mrcfile.open(ref_path, mode="r") as ref:
         voxel_size_xyz = np.array(
             [float(ref.voxel_size.x),
@@ -187,17 +204,35 @@ def save_mask_as_mrc(mask, ref_path, out_path):
             mrc.header.maps = maps
         except Exception:
             pass
-        mrc.update_header_from_data()
-        mrc.update_header_stats()
+        mrc.update_header_from_data()  # stats already computed by set_data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MASKS / COMPONENTS / CENTRE (UNCHANGED)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _bbox(mask, pad=0):
+    """Slices of the bounding box of mask grown by pad (clipped to the grid), or None."""
+    nz = [np.flatnonzero(mask.any(axis=ax)) for ax in ((1, 2), (0, 2), (0, 1))]
+    if len(nz[0]) == 0:
+        return None
+    return tuple(slice(max(a[0] - pad, 0), min(a[-1] + 1 + pad, n))
+                 for a, n in zip(nz, mask.shape))
+
+
+def label_in_bbox(mask, structure):
+    """ndimage.label on the bounding box only: same labels (same raster order)."""
+    labels = np.zeros(mask.shape, dtype=np.int32)
+    box = _bbox(mask)
+    if box is None:
+        return labels, 0
+    labels[box], nlab = ndimage.label(mask[box], structure=structure)
+    return labels, nlab
+
+
 def connected_components(mask, conn=2):
     structure = ndimage.generate_binary_structure(3, conn)
-    return ndimage.label(mask, structure=structure)
+    return label_in_bbox(mask, structure)
 
 
 def choose_single_patch(mask, voxel_size_zyx, conn=2):
@@ -222,7 +257,11 @@ def choose_patch_seed_center(mask, voxel_size_zyx, origin_xyz,
     idx = np.column_stack(np.where(mask))
     if len(idx) == 0:
         return None, None, None
-    dist      = ndimage.distance_transform_edt(mask, sampling=voxel_size_zyx)
+    # The nearest background voxel of any patch voxel lies in the patch bounding
+    # box grown by one voxel (clipped to the grid), so the EDT of that box is exact.
+    box       = _bbox(mask, pad=1)
+    dist      = np.zeros(mask.shape, dtype=np.float64)
+    dist[box] = ndimage.distance_transform_edt(mask[box], sampling=voxel_size_zyx)
     dist_vals = dist[tuple(idx.T)]
     max_dist  = float(dist_vals.max())
     if max_dist <= 0.0:
@@ -263,9 +302,13 @@ def make_center_marker(shape, center_idx, dilation_iters=1):
     i, j, k = center_idx.tolist()
     marker[i, j, k] = True
     if dilation_iters > 0:
-        structure = ndimage.generate_binary_structure(3, 1)
-        marker    = ndimage.binary_dilation(marker, structure=structure,
-                                             iterations=dilation_iters)
+        # Dilating a single voxel only reaches dilation_iters voxels away.
+        r   = dilation_iters + 1
+        win = tuple(slice(max(c - r, 0), min(c + r + 1, n))
+                    for c, n in zip((i, j, k), shape))
+        structure   = ndimage.generate_binary_structure(3, 1)
+        marker[win] = ndimage.binary_dilation(marker[win], structure=structure,
+                                              iterations=dilation_iters)
     return marker
 
 
@@ -544,8 +587,7 @@ def extract_pocket_fragment(trimmed_mask, centre_xyz, centre_idx,
                              voxel_size_zyx, origin_xyz,
                              connectivity=POCKET_CONNECTIVITY):
     struct           = make_conn_struct_3d(connectivity)
-    labeled, n_labels = scipy_label(trimmed_mask, structure=struct)
-    labeled           = labeled.astype(np.int32)
+    labeled, n_labels = label_in_bbox(trimmed_mask, struct)
     if n_labels == 0:
         return np.zeros_like(trimmed_mask, dtype=bool), 0, 0, "none"
     if n_labels == 1:

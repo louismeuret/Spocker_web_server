@@ -46,6 +46,7 @@ def _process_job(job_id):
             input_path,
             jobs_store.job_dir(job_id),
             display_downscale=meta.get("display_downscale"),
+            pocket_mode=meta.get("pocket_mode"),
             on_progress=report,
         )
 

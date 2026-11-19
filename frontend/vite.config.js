@@ -4,6 +4,12 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Plotly is only imported from a lazy() chunk, so Vite discovers it late
+  // and re-optimizes mid-session -> two React copies -> "Invalid hook call".
+  // Pre-bundle it up front.
+  optimizeDeps: {
+    include: ['plotly.js-dist-min', 'react-plotly.js/factory'],
+  },
   server: {
     allowedHosts: true,
     port: 5173,
@@ -12,7 +18,7 @@ export default defineConfig({
     // production (where Flask serves the built frontend itself) alike.
     proxy: {
       '/api': {
-        target: 'http://172.27.6.60:5001',
+        target: 'http://localhost:5001',
         changeOrigin: true,
       },
     },
