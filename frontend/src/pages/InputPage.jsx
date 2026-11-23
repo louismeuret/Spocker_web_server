@@ -142,7 +142,7 @@ export default function InputPage() {
             </p>
 
             {showSettings && (
-              <div style={{ border: "3px solid #000", padding: "0.75rem", marginTop: "1rem" }}>
+              <div style={{ border: "2px solid var(--lcars-lilac)", borderRadius: "0.35rem", padding: "0.75rem", marginTop: "1rem" }}>
                 <label className="nb-label" htmlFor="downscale-input">
                   Viewer grid resolution
                 </label>
@@ -220,12 +220,12 @@ export default function InputPage() {
                   onDrop={onDrop}
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: "3px dashed #000",
+                    border: "3px dashed var(--lcars-frame)",
                     padding: "2rem 1rem",
                     textAlign: "center",
                     cursor: "pointer",
-                    background: dragOver ? "#000" : "transparent",
-                    color: dragOver ? "#fff" : "#000",
+                    background: dragOver ? "var(--lcars-frame)" : "transparent",
+                    color: dragOver ? "var(--lcars-ink)" : "var(--lcars-frame)",
                     marginTop: "1rem",
                     marginBottom: "1rem",
                   }}
@@ -277,7 +277,7 @@ export default function InputPage() {
               )}
 
               {error && (
-                <p className="nb-mono" style={{ color: "#000", background: "#fff", border: "2px solid #000", padding: "0.5em" }}>
+                <p className="nb-mono" style={{ color: "var(--lcars-ink)", background: "var(--lcars-red)", borderRadius: "0.35rem", padding: "0.5em" }}>
                   ERROR: {error}
                 </p>
               )}

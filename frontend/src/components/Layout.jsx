@@ -8,7 +8,7 @@
 export function ViewerPane({ error, children }) {
   return (
     <section
-      style={{ flex: 1, margin: "1rem", minWidth: 0, border: "3px solid #fff", position: "relative" }}
+      style={{ flex: 1, margin: "1rem", minWidth: 0, border: "3px solid var(--lcars-frame)", borderRadius: "0.35rem", position: "relative" }}
     >
       {children}
       {error && (
@@ -19,8 +19,8 @@ export function ViewerPane({ error, children }) {
             bottom: 0,
             left: 0,
             right: 0,
-            background: "#fff",
-            color: "#000",
+            background: "var(--lcars-red)",
+            color: "var(--lcars-ink)",
             padding: "0.5em",
             fontSize: "0.7rem",
           }}

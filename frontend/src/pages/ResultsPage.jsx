@@ -409,7 +409,7 @@ function PocketRow({
         <span>SA {pocket.surface_area}A2</span>
       </div>
       {expanded && (
-        <div style={{ marginTop: "0.5rem", borderTop: "2px solid #000", paddingTop: "0.35rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <div style={{ marginTop: "0.5rem", borderTop: "2px solid var(--lcars-lilac)", paddingTop: "0.35rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           <label className="nb-toggle">
             <input type="checkbox" checked={showResidues} onChange={onToggleResidues} />
             <span className="nb-mono" style={{ fontSize: "0.7rem" }}>

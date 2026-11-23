@@ -71,7 +71,7 @@ export function buildMvsState(molstarLib, opts) {
   const { createBuilder } = molstarLib.extensions.mvs;
 
   const builder = createBuilder();
-  builder.canvas({ background_color: "#ffffff" });
+  builder.canvas({ background_color: "#000000" });
 
   const structure = builder.download({ url: structureUrl }).parse({ format }).modelStructure();
 

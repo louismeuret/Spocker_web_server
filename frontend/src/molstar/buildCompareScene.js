@@ -73,7 +73,7 @@ export function buildCompareState(molstarLib, opts) {
   const { createBuilder } = molstarLib.extensions.mvs;
 
   const builder = createBuilder();
-  builder.canvas({ background_color: "#ffffff" });
+  builder.canvas({ background_color: "#000000" });
 
   // Only B moves: keeping A fixed means its results page and this page show
   // the same structure in the same place, which makes flipping between them

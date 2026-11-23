@@ -1,12 +1,52 @@
+/* LCARS skin (Star Trek TNG-era "Library Computer Access/Retrieval System").
+ *
+ * Palette is the "Classic" set published at https://www.thelcars.com/colors.php
+ * (v26). The class names are still the `nb-*` ones from the previous
+ * black/white brutalist skin, so no component markup had to move: the look
+ * lives here. Where a component hardcoded #000/#fff it now reads one of the
+ * --lcars-* custom properties below.
+ *
+ * LCARS conventions worth keeping if this is edited later:
+ *  - black background, never a light one; colour comes from the frame, not the fill
+ *  - chunky pill/elbow shapes, generous corner radii on the *outer* corners only
+ *  - black text on the coloured blocks, coloured text on the black
+ *  - condensed uppercase type, wide letter-spacing
+ *  - blocks are separated by hard black gaps, not by borders
+ */
 
 :root {
-  --nb-black: #000000;
-  --nb-white: #ffffff;
-  --nb-border: 3px;
-  --nb-border-thick: 4px;
-  --nb-shadow: 6px;
-  --nb-shadow-sm: 3px;
-  --nb-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  /* Classic theme, thelcars.com */
+  --lcars-orange: #eb943a;
+  --lcars-barley: #edb378;
+  --lcars-almond: #d29b7f;
+  --lcars-almond-creme: #fcc19f;
+  --lcars-butterscotch: #ea9c72;
+  --lcars-african-violet: #baa4e5;
+  --lcars-bluey: #8899ff;
+  --lcars-lilac: #8a72a7;
+  --lcars-true-mauve: #c082a9;
+  --lcars-dusty-mauve: #9d698a;
+  --lcars-red: #cf4f4f;
+  --lcars-mars: #ff2200;
+
+  /* Semantic roles -- change these, not the hues above. */
+  --lcars-bg: #000000;
+  --lcars-ink: #000000;          /* text that sits ON a coloured block */
+  --lcars-panel: #0b0806;        /* inside of a framed panel */
+  --lcars-track: #2a1a0c;        /* empty part of a bar/slider/input */
+  --lcars-text: var(--lcars-almond-creme);
+  --lcars-frame: var(--lcars-orange);
+  --lcars-accent: var(--lcars-african-violet);
+  --lcars-active: var(--lcars-almond-creme);
+
+  --lcars-radius: 1.4rem;
+  --lcars-radius-sm: 0.35rem;
+  --lcars-spine: 1.1rem;         /* width of a panel's left colour bar */
+
+  /* Antonio is the usual free stand-in for the LCARS lettering; the rest of
+     the stack is condensed-ish so a failed font load still reads right. */
+  --nb-font: "Antonio", "Oswald", "Helvetica Neue Condensed", "Arial Narrow", sans-serif;
+  --nb-body-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --nb-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --nb-gap: 1rem;
 
@@ -28,10 +68,9 @@ body {
 }
 
 body {
-  background: var(--nb-black);
-  color: var(--nb-white);
-  font-family: var(--nb-font);
-  font-weight: 600;
+  background: var(--lcars-bg);
+  color: var(--lcars-text);
+  font-family: var(--nb-body-font);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -48,9 +87,12 @@ h2,
 h3,
 h4 {
   margin: 0 0 0.5em 0;
+  font-family: var(--nb-font);
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  line-height: 1.05;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--lcars-frame);
 }
 
 p {
@@ -66,7 +108,6 @@ input,
 select,
 textarea {
   font-family: inherit;
-  font-weight: inherit;
   color: inherit;
 }
 
@@ -80,71 +121,108 @@ textarea {
   flex-direction: column;
 }
 
+/* The top bar: a title block on the left, controls on the right, and the
+   signature sweep bar running underneath both with a hard gap near the
+   right end. */
 .nb-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--nb-gap);
-  padding: 1rem 1.5rem;
-  background: var(--nb-black);
-  border-bottom: var(--nb-border-thick) solid var(--nb-white);
+  padding: 0.7rem 1.25rem 1rem;
+  background: var(--lcars-bg);
   flex-wrap: wrap;
 }
 
+.nb-header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 5.5rem;
+  bottom: 0;
+  height: 0.55rem;
+  background: var(--lcars-frame);
+  border-radius: 0 var(--lcars-radius-sm) var(--lcars-radius-sm) 0;
+}
+
+.nb-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 5rem;
+  bottom: 0;
+  height: 0.55rem;
+  background: var(--lcars-lilac);
+  border-radius: var(--lcars-radius-sm) 0 0 var(--lcars-radius-sm);
+}
+
+/* Title as an LCARS elbow block: black lettering on colour, rounded on the
+   outboard side only. */
 .nb-header__title {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  font-size: 1.25rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--lcars-frame);
+  color: var(--lcars-ink);
+  padding: 0.3rem 1.1rem 0.3rem 0.9rem;
+  border-radius: var(--lcars-radius) var(--lcars-radius-sm) var(--lcars-radius-sm) var(--lcars-radius);
+  font-family: var(--nb-font);
+  font-size: 1.6rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
   text-decoration: none;
+  line-height: 1;
 }
 
 .nb-header__title .nb-mark {
   display: inline-block;
-  width: 0.85em;
+  width: 0.5em;
   height: 0.85em;
-  background: var(--nb-white);
-  transform: rotate(45deg);
+  background: var(--lcars-ink);
+  border-radius: 0.25em 0 0 0.25em;
 }
 
 .nb-header__nav {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.5rem;
   align-items: center;
   flex-wrap: wrap;
 }
 
-/* ---------- panels / cards ---------- */
+/* ---------- panels ---------- */
 
 .nb-panel {
-  background: var(--nb-white);
-  color: var(--nb-black);
-  border: var(--nb-border) solid var(--nb-black);
-  box-shadow: var(--nb-shadow) var(--nb-shadow) 0 0 var(--nb-black);
+  background: var(--lcars-panel);
+  color: var(--lcars-text);
+  border-left: var(--lcars-spine) solid var(--lcars-frame);
+  border-radius: var(--lcars-radius) var(--lcars-radius-sm) var(--lcars-radius-sm) var(--lcars-radius);
+  overflow: hidden;
 }
 
 .nb-panel--dark {
-  background: var(--nb-black);
-  color: var(--nb-white);
-  border-color: var(--nb-white);
-  box-shadow: var(--nb-shadow) var(--nb-shadow) 0 0 var(--nb-white);
+  border-left-color: var(--lcars-lilac);
 }
 
 .nb-panel__header {
-  padding: 0.6rem 0.9rem;
-  border-bottom: var(--nb-border) solid currentColor;
-  font-weight: 800;
+  padding: 0.3rem 0.9rem;
+  background: var(--lcars-frame);
+  color: var(--lcars-ink);
+  font-family: var(--nb-font);
+  font-size: 1.05rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  min-height: 1.9rem;
+}
+
+.nb-panel--dark > .nb-panel__header {
+  background: var(--lcars-lilac);
 }
 
 .nb-panel__body {
@@ -154,56 +232,73 @@ textarea {
 /* ---------- buttons ---------- */
 
 .nb-btn {
+  --lcars-btn: var(--lcars-frame);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5em;
-  background: var(--nb-white);
-  color: var(--nb-black);
-  border: var(--nb-border) solid var(--nb-black);
-  box-shadow: var(--nb-shadow-sm) var(--nb-shadow-sm) 0 0 var(--nb-black);
-  padding: 0.6em 1em;
-  font-weight: 800;
+  background: var(--lcars-btn);
+  color: var(--lcars-ink);
+  border: none;
+  border-radius: 999px;
+  padding: 0.35em 1.1em;
+  font-family: var(--nb-font);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-size: 0.85rem;
+  text-decoration: none;
   cursor: pointer;
-  transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+  transition: background-color 90ms linear, filter 90ms linear;
   user-select: none;
 }
 
-.nb-btn:hover {
-  transform: translate(1px, 1px);
-  box-shadow: 2px 2px 0 0 var(--nb-black);
+/* A row of buttons cycles through the palette the way an LCARS panel does,
+   so sibling controls read as separate blocks without any extra markup. */
+.nb-btn:nth-child(3n + 2) {
+  --lcars-btn: var(--lcars-barley);
 }
 
+.nb-btn:nth-child(3n) {
+  --lcars-btn: var(--lcars-butterscotch);
+}
+
+.nb-btn:hover {
+  filter: brightness(1.15);
+}
+
+/* Selected / held: the pale "lit" state. */
 .nb-btn:active,
 .nb-btn.is-pressed {
-  transform: translate(3px, 3px);
-  box-shadow: 0 0 0 0 var(--nb-black);
+  --lcars-btn: var(--lcars-active);
+  filter: none;
+}
+
+.nb-btn:focus-visible {
+  outline: 2px solid var(--lcars-bluey);
+  outline-offset: 2px;
 }
 
 .nb-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
-  transform: none;
-  box-shadow: var(--nb-shadow-sm) var(--nb-shadow-sm) 0 0 var(--nb-black);
+  background: var(--lcars-track);
+  color: var(--lcars-almond);
+  filter: none;
 }
 
-.nb-btn--invert {
-  background: var(--nb-black);
-  color: var(--nb-white);
-  border-color: var(--nb-white);
-  box-shadow: var(--nb-shadow-sm) var(--nb-shadow-sm) 0 0 var(--nb-white);
-}
-
-.nb-btn--invert:hover {
-  box-shadow: 2px 2px 0 0 var(--nb-white);
+/* The dark variant: used on top of a coloured bar, so it inverts to black
+   with coloured lettering. */
+.nb-btn--invert,
+.nb-btn--invert:nth-child(3n + 2),
+.nb-btn--invert:nth-child(3n) {
+  --lcars-btn: var(--lcars-bg);
+  color: var(--lcars-frame);
+  box-shadow: inset 0 0 0 2px var(--lcars-frame);
 }
 
 .nb-btn--invert:active,
 .nb-btn--invert.is-pressed {
-  box-shadow: 0 0 0 0 var(--nb-white);
+  --lcars-btn: var(--lcars-frame);
+  color: var(--lcars-ink);
 }
 
 .nb-btn--block {
@@ -211,140 +306,116 @@ textarea {
 }
 
 .nb-btn--sm {
-  padding: 0.4em 0.7em;
-  font-size: 0.72rem;
+  padding: 0.25em 0.8em;
+  font-size: 0.85rem;
 }
 
 /* ---------- form controls ---------- */
 
 .nb-input {
-  background: var(--nb-white);
-  color: var(--nb-black);
-  border: var(--nb-border) solid var(--nb-black);
-  padding: 0.6em 0.75em;
+  background: var(--lcars-track);
+  color: var(--lcars-text);
+  border: 2px solid var(--lcars-frame);
+  border-radius: 999px;
+  /* Horizontal padding clears the pill's own curve, or the first character
+     sits under it. */
+  padding: 0.4em 1.1em;
   font-size: 0.9rem;
-  font-weight: 700;
   width: 100%;
 }
 
 .nb-input:focus {
   outline: none;
-  box-shadow: var(--nb-shadow-sm) var(--nb-shadow-sm) 0 0 var(--nb-black);
+  border-color: var(--lcars-active);
 }
 
 .nb-input::placeholder {
-  color: rgba(0, 0, 0, 0.45);
-  font-weight: 600;
+  color: var(--lcars-almond);
+  opacity: 0.7;
+  text-transform: uppercase;
 }
 
 .nb-label {
   display: block;
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-family: var(--nb-font);
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--lcars-frame);
   margin-bottom: 0.35em;
 }
 
-/* toggle checkbox styled as a hard square switch */
+/* Checkbox as a small LCARS block that lights up when set. */
 .nb-toggle {
   display: flex;
   align-items: center;
   gap: 0.6em;
   cursor: pointer;
   font-size: 0.85rem;
-  font-weight: 700;
 }
 
 .nb-toggle input {
   appearance: none;
   -webkit-appearance: none;
-  width: 1.2em;
-  height: 1.2em;
-  min-width: 1.2em;
-  border: var(--nb-border-thick) solid currentColor;
-  background: transparent;
-  display: grid;
-  place-content: center;
+  width: 1.5em;
+  height: 1em;
+  min-width: 1.5em;
+  border: none;
+  border-radius: 0.5em;
+  background: var(--lcars-track);
+  box-shadow: inset 0 0 0 2px var(--lcars-frame);
   cursor: pointer;
   margin: 0;
+  transition: background-color 90ms linear;
 }
 
-.nb-toggle input::before {
-  content: "";
-  width: 0.6em;
-  height: 0.6em;
-  background: currentColor;
-  transform: scale(0);
-  transition: transform 80ms ease-out;
+.nb-toggle input:checked {
+  background: var(--lcars-frame);
 }
 
-.nb-toggle input:checked::before {
-  transform: scale(1);
+.nb-toggle input:focus-visible {
+  outline: 2px solid var(--lcars-bluey);
+  outline-offset: 2px;
 }
 
 .nb-toggle__swatch {
   width: 0.9em;
   height: 0.9em;
   border: 2px solid currentColor;
+  border-radius: 0.45em;
   flex: none;
 }
 
-/* ---------- range slider: square thumb, no gradients ---------- */
+/* ---------- range slider ---------- */
 
 .nb-slider {
   width: 100%;
-  accent-color: var(--nb-black);
+  accent-color: var(--lcars-frame);
   cursor: pointer;
 }
 
-/* ---------- progress bar: black/white marching stripes, no grays ---------- */
+/* ---------- progress ---------- */
 
+/* Segmented bar: solid colour masked by a repeating gap so the track shows
+   through between blocks, which is how LCARS draws a meter. */
 .nb-progress {
-  border: var(--nb-border) solid var(--nb-black);
-  background: var(--nb-white);
-  height: 1.4rem;
+  background: var(--lcars-track);
+  border-radius: var(--lcars-radius-sm);
+  height: 1.1rem;
   position: relative;
   overflow: hidden;
 }
 
 .nb-progress__fill {
   height: 100%;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--nb-black) 0,
-    var(--nb-black) 10px,
-    var(--nb-white) 10px,
-    var(--nb-white) 20px
-  );
-  background-size: 28px 28px;
-  animation: nb-march 1s linear infinite;
+  background: var(--lcars-frame);
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 11px, transparent 11px 15px);
+  mask-image: repeating-linear-gradient(90deg, #000 0 11px, transparent 11px 15px);
   transition: width 200ms ease-out;
 }
 
-@keyframes nb-march {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 28px 0;
-  }
-}
-
-.nb-progress--dark {
-  border-color: var(--nb-white);
-  background: var(--nb-black);
-}
-
 .nb-progress--dark .nb-progress__fill {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--nb-white) 0,
-    var(--nb-white) 10px,
-    var(--nb-black) 10px,
-    var(--nb-black) 20px
-  );
-  background-size: 28px 28px;
+  background: var(--lcars-lilac);
 }
 
 /* ---------- misc ---------- */
@@ -352,16 +423,20 @@ textarea {
 .nb-tag {
   display: inline-block;
   border: 2px solid currentColor;
-  padding: 0.1em 0.5em;
-  font-size: 0.65rem;
-  font-weight: 800;
+  border-radius: 999px;
+  padding: 0.05em 0.7em;
+  font-family: var(--nb-font);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .nb-divider {
   border: none;
-  border-top: var(--nb-border) solid currentColor;
+  height: 0.3rem;
+  border-radius: var(--lcars-radius-sm);
+  background: var(--lcars-frame);
+  opacity: 0.6;
   margin: 0.9rem 0;
 }
 
@@ -371,6 +446,8 @@ textarea {
 
 .nb-scroll {
   overflow-y: auto;
+  scrollbar-color: var(--lcars-frame) var(--lcars-track);
+  scrollbar-width: thin;
 }
 
 .nb-scroll::-webkit-scrollbar {
@@ -378,12 +455,12 @@ textarea {
 }
 
 .nb-scroll::-webkit-scrollbar-track {
-  background: var(--nb-white);
+  background: var(--lcars-track);
 }
 
 .nb-scroll::-webkit-scrollbar-thumb {
-  background: var(--nb-black);
-  border: 2px solid var(--nb-white);
+  background: var(--lcars-frame);
+  border-radius: 5px;
 }
 
 .nb-viewer-overlay {
@@ -392,11 +469,12 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--nb-white);
-  color: var(--nb-black);
-  font-weight: 800;
+  background: var(--lcars-bg);
+  color: var(--lcars-frame);
+  font-family: var(--nb-font);
+  font-size: 1.2rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ---------- scene-loading spinner over the 3D viewer ---------- */
@@ -411,10 +489,11 @@ textarea {
   gap: 0.6rem;
   /* Translucent, and click-through: the structure stays visible and
      draggable while a volume grid is still loading. */
-  background: rgba(255, 255, 255, 0.55);
-  color: var(--nb-black);
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--lcars-frame);
+  font-family: var(--nb-font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   pointer-events: none;
 }
 
@@ -442,8 +521,8 @@ textarea {
    shadows would be cast by the unmasked box instead of by the hand. */
 .nb-hand {
   line-height: 0;
-  filter: drop-shadow(2px 0 0 var(--nb-black)) drop-shadow(-2px 0 0 var(--nb-black))
-    drop-shadow(0 2px 0 var(--nb-black)) drop-shadow(0 -2px 0 var(--nb-black));
+  filter: drop-shadow(2px 0 0 var(--lcars-frame)) drop-shadow(-2px 0 0 var(--lcars-frame))
+    drop-shadow(0 2px 0 var(--lcars-frame)) drop-shadow(0 -2px 0 var(--lcars-frame));
 }
 
 /* 552x683 is the artwork's own size; the ratio keeps `contain` from leaving
@@ -451,7 +530,7 @@ textarea {
 .nb-hand__shape {
   position: relative;
   aspect-ratio: 552 / 683;
-  background: var(--nb-white);
+  background: var(--lcars-track);
   -webkit-mask-image: url(/spinner.webp);
   mask-image: url(/spinner.webp);
   -webkit-mask-size: contain;
@@ -496,7 +575,7 @@ textarea {
 
 .nb-hand__value {
   font-size: 0.95rem;
-  font-weight: 800;
+  color: var(--lcars-frame);
 }
 
 .nb-hand__label {

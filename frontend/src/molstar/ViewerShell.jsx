@@ -10,7 +10,7 @@
  */
 export default function ViewerShell({ containerRef, status, busy }) {
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "var(--lcars-bg)" }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
       {status === "loading" && (
         <div className="nb-viewer-overlay">
