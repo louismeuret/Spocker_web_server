@@ -110,10 +110,12 @@ export default function InputPage() {
     <main
       style={{
         flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "safe center",
         gap: "1.5rem",
         padding: "2rem 1rem",
       }}

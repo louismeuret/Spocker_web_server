@@ -105,7 +105,7 @@ export default function ComparePage() {
   return (
     <main style={{ flex: 1, display: "flex", minHeight: 0 }}>
       <aside
-        className="nb-panel nb-scroll"
+        className="nb-panel nb-scroll nb-resize-x"
         style={{ width: "23rem", flex: "none", margin: "1rem 0 1rem 1rem", overflowY: "auto" }}
       >
         <div className="nb-panel__header">
