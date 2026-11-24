@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { THEME_EVENT } from "../theme";
 
 // How fast stars travel toward the viewer, in z-units/second. Low on
 // purpose -- this is an ambient bridge-viewscreen backdrop, not a warp jump.
@@ -30,11 +31,11 @@ function randomStar() {
  * Drawn nose-right in local space; caller translates/scales/flips it into
  * place. Deliberately abstracted (not a blueprint reproduction) -- it just
  * needs to read as "a ship" at the small, distant scale it's drawn at. */
-function drawShip(ctx, scale, flip) {
+function drawShip(ctx, scale, flip, rgb) {
   ctx.save();
   if (flip) ctx.scale(-1, 1);
   ctx.scale(scale, scale);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillStyle = `rgba(${rgb},0.5)`;
 
   // Engineering hull.
   ctx.beginPath();
@@ -91,6 +92,16 @@ export default function StarBackground({ density = 0.00012 }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
+    // Theme colours, read once: the starfield is the biggest surface on the
+    // page, so it has to follow --lcars-bg rather than assume a black sky.
+    let sky = "#000000";
+    let starRgb = "255, 255, 255";
+    function readTheme() {
+      const rootStyle = getComputedStyle(document.documentElement);
+      sky = rootStyle.getPropertyValue("--lcars-bg").trim() || sky;
+      starRgb = rootStyle.getPropertyValue("--lcars-star-rgb").trim() || starRgb;
+    }
+    readTheme();
     let stars = [];
     let animationFrame;
     let running = true;
@@ -165,7 +176,7 @@ export default function StarBackground({ density = 0.00012 }) {
       heading.x += (headingTarget.x - heading.x) * ease;
       heading.y += (headingTarget.y - heading.y) * ease;
 
-      ctx.fillStyle = "#000000";
+      ctx.fillStyle = sky;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       const scale = Math.min(canvas.width, canvas.height) * 0.5;
@@ -186,7 +197,7 @@ export default function StarBackground({ density = 0.00012 }) {
         const opacity = Math.min(1, twinkle * (0.35 + 0.65 * proximity));
         const size = star.size * Math.min(1 + proximity * 3, 4);
 
-        ctx.fillStyle = `rgba(255,255,255,${opacity.toFixed(3)})`;
+        ctx.fillStyle = `rgba(${starRgb},${opacity.toFixed(3)})`;
         ctx.fillRect(px, py, size, size);
       }
 
@@ -204,7 +215,7 @@ export default function StarBackground({ density = 0.00012 }) {
           const y = ship.fromY + (ship.toY - ship.fromY) * p;
           ctx.save();
           ctx.translate(x, y);
-          drawShip(ctx, ship.scale, ship.flip);
+          drawShip(ctx, ship.scale, ship.flip, starRgb);
           ctx.restore();
         }
       }
@@ -226,6 +237,7 @@ export default function StarBackground({ density = 0.00012 }) {
     resize();
     animationFrame = requestAnimationFrame(draw);
     window.addEventListener("resize", resize);
+    window.addEventListener(THEME_EVENT, readTheme);
     window.addEventListener("pointermove", handlePointerMove);
     document.addEventListener("visibilitychange", handleVisibility);
 
@@ -233,6 +245,7 @@ export default function StarBackground({ density = 0.00012 }) {
       running = false;
       cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", resize);
+      window.removeEventListener(THEME_EVENT, readTheme);
       window.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("visibilitychange", handleVisibility);
     };

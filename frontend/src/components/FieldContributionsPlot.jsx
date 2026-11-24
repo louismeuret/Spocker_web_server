@@ -58,7 +58,16 @@ export default function FieldContributionsPlot({
     if (field) onSelectField?.(field);
   };
 
-  const font = { family: "var(--nb-mono), monospace", color: "#fcc19f", size: 10 };
+  // Plotly takes plain colour strings, so pull the theme's values out of
+  // the document rather than hardcoding one theme's palette here.
+  const rootStyle = getComputedStyle(document.documentElement);
+  const theme = (name, fallback) => rootStyle.getPropertyValue(name).trim() || fallback;
+  const ink = theme("--lcars-text", "#2f3749");
+  const line = theme("--lcars-frame", "#37a6d1");
+  const tipBg = theme("--lcars-active", "#1c3c55");
+  const tipInk = theme("--lcars-ink-active", "#f3f4f7");
+
+  const font = { family: "var(--nb-mono), monospace", color: ink, size: 10 };
 
   return (
     <div>
@@ -82,7 +91,7 @@ export default function FieldContributionsPlot({
               domain: showLegend ? { x: [0, 0.52] } : { x: [0, 1] },
               marker: {
                 colors,
-                line: { color: "#fcc19f", width: fields.map((f) => (selected.has(f) ? 4 : 2)) },
+                line: { color: ink, width: fields.map((f) => (selected.has(f) ? 4 : 2)) },
               },
               hovertemplate: "<b>%{label}</b><br>%{value:.4f} (%{percent})<extra></extra>",
             },
@@ -95,7 +104,7 @@ export default function FieldContributionsPlot({
             font,
             showlegend: showLegend,
             legend: { font: { size: 9 }, orientation: "v", x: 0.55, xanchor: "left", y: 0.5, yanchor: "middle" },
-            hoverlabel: { bgcolor: "#000000", bordercolor: "#eb943a", font: { color: "#fcc19f", size: 10 } },
+            hoverlabel: { bgcolor: tipBg, bordercolor: line, font: { color: tipInk, size: 10 } },
           }}
           config={{ displayModeBar: false, responsive: true }}
           style={{ width: "100%" }}
@@ -111,7 +120,7 @@ export default function FieldContributionsPlot({
               customdata: fields,
               marker: {
                 color: colors,
-                line: { color: "#fcc19f", width: fields.map((f) => (selected.has(f) ? 4 : 2)) },
+                line: { color: ink, width: fields.map((f) => (selected.has(f) ? 4 : 2)) },
               },
               hovertemplate: "<b>%{x}</b><br>%{y:.4f}<extra></extra>",
             },
@@ -123,19 +132,19 @@ export default function FieldContributionsPlot({
             paper_bgcolor: "transparent",
             plot_bgcolor: "transparent",
             font,
-            xaxis: { tickfont: { size: 9 }, linecolor: "#eb943a", linewidth: 2 },
+            xaxis: { tickfont: { size: 9 }, linecolor: line, linewidth: 2 },
             yaxis: {
               title: { text: "contribution ratio", font: { size: 9 } },
-              gridcolor: "rgba(235,148,58,0.2)",
-              zerolinecolor: "#eb943a",
-              linecolor: "#eb943a",
+              gridcolor: "rgba(127,127,127,0.25)",
+              zerolinecolor: line,
+              linecolor: line,
               linewidth: 2,
               // A fixed range only when comparing across pockets; otherwise
               // let Plotly autoscale this pocket on its own.
               ...(yMax ? { range: [0, yMax], autorange: false } : {}),
             },
             bargap: 0.3,
-            hoverlabel: { bgcolor: "#000000", bordercolor: "#eb943a", font: { color: "#fcc19f", size: 10 } },
+            hoverlabel: { bgcolor: tipBg, bordercolor: line, font: { color: tipInk, size: 10 } },
           }}
           config={{ displayModeBar: false, responsive: true }}
           style={{ width: "100%" }}

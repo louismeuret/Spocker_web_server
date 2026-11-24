@@ -1,43 +1,60 @@
-/* LCARS skin (Star Trek TNG-era "Library Computer Access/Retrieval System").
+/* LCARS skin ("Library Computer Access/Retrieval System").
  *
- * Palette is the "Classic" set published at https://www.thelcars.com/colors.php
- * (v26). The class names are still the `nb-*` ones from the previous
- * black/white brutalist skin, so no component markup had to move: the look
- * lives here. Where a component hardcoded #000/#fff it now reads one of the
- * --lcars-* custom properties below.
+ * Two themes, both from the sets published at https://www.thelcars.com/colors.php
+ * (v26): the TNG-era "Classic" set (black, orange, violet) is the default,
+ * and the light "Picard" set (the 2399 refit -- starlight white, blue and
+ * orange-red) lives under [data-theme="light"] on <html>. Switching is that
+ * one attribute; nothing else here or in any component hardcodes a colour.
+ *
+ * No rule below names a hue directly. Everything goes through a role:
+ *  - --lcars-b1..b6 + --lcars-cap are BLOCK colours: fills for bars, buttons
+ *    and panel spines, always carrying --lcars-ink as their text.
+ *  - the rest are surfaces and text colours.
+ * A third theme is therefore a third block of these variables, nothing more.
  *
  * LCARS conventions worth keeping if this is edited later:
- *  - black background, never a light one; colour comes from the frame, not the fill
+ *  - colour comes from the frame, not from the fill: surfaces stay plain
  *  - chunky pill/elbow shapes, generous corner radii on the *outer* corners only
- *  - black text on the coloured blocks, coloured text on the black
+ *  - blocks carry ink-coloured lettering; running text never sits on a block
  *  - condensed uppercase type, wide letter-spacing
- *  - blocks are separated by hard black gaps, not by borders
+ *  - blocks are separated by hard gaps of the page colour, not by borders
  */
 
 :root {
-  /* Classic theme, thelcars.com */
-  --lcars-orange: #eb943a;
-  --lcars-barley: #edb378;
-  --lcars-almond: #d29b7f;
-  --lcars-almond-creme: #fcc19f;
-  --lcars-butterscotch: #ea9c72;
-  --lcars-african-violet: #baa4e5;
-  --lcars-bluey: #8899ff;
-  --lcars-lilac: #8a72a7;
-  --lcars-true-mauve: #c082a9;
-  --lcars-dusty-mauve: #9d698a;
-  --lcars-red: #cf4f4f;
-  --lcars-mars: #ff2200;
+  /* Blocks: Classic theme. Every one is light enough to carry black
+     lettering -- that is the entry requirement for a block colour, since
+     --lcars-ink prints on all of them. */
+  --lcars-b1: #eb943a;           /* orange */
+  --lcars-b2: #baa4e5;           /* african violet */
+  --lcars-b3: #edb378;           /* barley */
+  --lcars-b4: #8899ff;           /* bluey */
+  --lcars-b5: #c082a9;           /* true mauve */
+  --lcars-b6: #ea9c72;           /* butterscotch */
+  --lcars-cap: #8a72a7;          /* lilac; end-caps and hairlines, carries no text */
 
-  /* Semantic roles -- change these, not the hues above. */
+  /* Surfaces and text. */
   --lcars-bg: #000000;
-  --lcars-ink: #000000;          /* text that sits ON a coloured block */
   --lcars-panel: #0b0806;        /* inside of a framed panel */
   --lcars-track: #2a1a0c;        /* empty part of a bar/slider/input */
-  --lcars-text: var(--lcars-almond-creme);
-  --lcars-frame: var(--lcars-orange);
-  --lcars-accent: var(--lcars-african-violet);
-  --lcars-active: var(--lcars-almond-creme);
+  --lcars-ink: #000000;          /* text that sits ON a block */
+  --lcars-text: #fcc19f;         /* running text, on bg or panel (almond creme) */
+  --lcars-text-accent: #eb943a;  /* headings/labels: accented, still legible on bg */
+  --lcars-muted: #d29b7f;        /* placeholder + disabled lettering (almond) */
+  --lcars-red: #cf4f4f;
+  --lcars-scrim: rgba(0, 0, 0, 0.55);
+
+  /* The "lit" state of a control. It inverts against the page -- pale here,
+     dark on the light theme -- so a selected block never relies on hue
+     alone, which is why it carries its own ink. */
+  --lcars-active: #fcc19f;
+  --lcars-ink-active: #000000;
+
+  --lcars-frame: var(--lcars-b1);
+  --lcars-accent: var(--lcars-b2);
+
+  /* Starfield canvas (see components/StarBackground.jsx), which reads these
+     at mount because a <canvas> cannot inherit a CSS colour. */
+  --lcars-star-rgb: 255, 255, 255;
 
   --lcars-radius: 1.4rem;
   --lcars-radius-sm: 0.35rem;
@@ -52,6 +69,36 @@
 
   color-scheme: dark;
   font-size: 16px;
+}
+
+/* Picard-era light set (2399 refit). Put data-theme="light" on <html>. */
+:root[data-theme="light"] {
+  --lcars-b1: #37a6d1;           /* blue */
+  --lcars-b2: #41c4f7;           /* bright blue */
+  --lcars-b3: #9ea5ba;           /* light gray */
+  --lcars-b4: #ff977b;           /* pale orange-red */
+  --lcars-b5: #e7442a;           /* orange-red */
+  --lcars-b6: #d2d5df;           /* ghost gray */
+  --lcars-cap: #6d748c;          /* primary gray */
+
+  --lcars-bg: #f3f4f7;           /* starlight */
+  --lcars-panel: #ffffff;
+  --lcars-track: #d2d5df;
+  --lcars-ink: #000000;
+  --lcars-text: #2f3749;         /* dark gray */
+  --lcars-text-accent: #1c3c55;  /* dark blue */
+  --lcars-muted: #52596e;        /* medium-dark gray */
+  --lcars-red: #e7442a;
+  --lcars-scrim: rgba(243, 244, 247, 0.6);
+
+  --lcars-active: #1c3c55;
+  --lcars-ink-active: #f3f4f7;
+
+  --lcars-accent: var(--lcars-b5);
+
+  --lcars-star-rgb: 120, 130, 150;
+
+  color-scheme: light;
 }
 
 *,
@@ -93,7 +140,7 @@ h4 {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   line-height: 1;
-  color: var(--lcars-frame);
+  color: var(--lcars-text-accent);
 }
 
 p {
@@ -151,11 +198,11 @@ textarea {
     90deg,
     var(--lcars-frame) 0 58%,
     transparent 58% 58.7%,
-    var(--lcars-true-mauve) 58.7% 74%,
+    var(--lcars-b5) 58.7% 74%,
     transparent 74% 74.7%,
-    var(--lcars-barley) 74.7% 88%,
+    var(--lcars-b3) 74.7% 88%,
     transparent 88% 88.7%,
-    var(--lcars-bluey) 88.7% 100%
+    var(--lcars-b4) 88.7% 100%
   );
   border-radius: 0 var(--lcars-radius-sm) var(--lcars-radius-sm) 0;
 }
@@ -167,7 +214,7 @@ textarea {
   width: 5rem;
   bottom: 0;
   height: 0.55rem;
-  background: var(--lcars-lilac);
+  background: var(--lcars-cap);
   border-radius: var(--lcars-radius-sm) 0 0 var(--lcars-radius-sm);
 }
 
@@ -219,14 +266,14 @@ textarea {
 /* Sibling panels (the pocket cards, mainly) step through the palette the way
    an LCARS sidebar does. Decorative only -- nth-of-type counts elements, so an
    interleaved sibling just shifts where the ladder starts. */
-.nb-panel:nth-of-type(6n + 2) { border-left-color: var(--lcars-african-violet); }
-.nb-panel:nth-of-type(6n + 3) { border-left-color: var(--lcars-barley); }
-.nb-panel:nth-of-type(6n + 4) { border-left-color: var(--lcars-bluey); }
-.nb-panel:nth-of-type(6n + 5) { border-left-color: var(--lcars-true-mauve); }
-.nb-panel:nth-of-type(6n) { border-left-color: var(--lcars-butterscotch); }
+.nb-panel:nth-of-type(6n + 2) { border-left-color: var(--lcars-b2); }
+.nb-panel:nth-of-type(6n + 3) { border-left-color: var(--lcars-b3); }
+.nb-panel:nth-of-type(6n + 4) { border-left-color: var(--lcars-b4); }
+.nb-panel:nth-of-type(6n + 5) { border-left-color: var(--lcars-b5); }
+.nb-panel:nth-of-type(6n) { border-left-color: var(--lcars-b6); }
 
 .nb-panel.nb-panel--dark {
-  border-left-color: var(--lcars-lilac);
+  border-left-color: var(--lcars-cap);
 }
 
 .nb-panel__header {
@@ -245,7 +292,7 @@ textarea {
 }
 
 .nb-panel--dark > .nb-panel__header {
-  background: var(--lcars-lilac);
+  background: var(--lcars-cap);
 }
 
 .nb-panel__body {
@@ -295,11 +342,11 @@ textarea {
    so sibling controls read as separate blocks without any extra markup.
    Every colour here is light enough to carry black lettering. The
    :not() keeps the cycle off the inverted variant, which sets its own. */
-.nb-btn:not(.nb-btn--invert):nth-child(6n + 2) { --lcars-btn: var(--lcars-african-violet); }
-.nb-btn:not(.nb-btn--invert):nth-child(6n + 3) { --lcars-btn: var(--lcars-barley); }
-.nb-btn:not(.nb-btn--invert):nth-child(6n + 4) { --lcars-btn: var(--lcars-bluey); }
-.nb-btn:not(.nb-btn--invert):nth-child(6n + 5) { --lcars-btn: var(--lcars-true-mauve); }
-.nb-btn:not(.nb-btn--invert):nth-child(6n) { --lcars-btn: var(--lcars-butterscotch); }
+.nb-btn:not(.nb-btn--invert):nth-child(6n + 2) { --lcars-btn: var(--lcars-b2); }
+.nb-btn:not(.nb-btn--invert):nth-child(6n + 3) { --lcars-btn: var(--lcars-b3); }
+.nb-btn:not(.nb-btn--invert):nth-child(6n + 4) { --lcars-btn: var(--lcars-b4); }
+.nb-btn:not(.nb-btn--invert):nth-child(6n + 5) { --lcars-btn: var(--lcars-b5); }
+.nb-btn:not(.nb-btn--invert):nth-child(6n) { --lcars-btn: var(--lcars-b6); }
 
 .nb-btn:hover {
   filter: brightness(1.15);
@@ -311,19 +358,20 @@ textarea {
 .nb-btn:active,
 .nb-btn.is-pressed {
   --lcars-btn: var(--lcars-active);
+  color: var(--lcars-ink-active);
   box-shadow: inset 0 0 0 3px var(--lcars-bg);
   filter: none;
 }
 
 .nb-btn:focus-visible {
-  outline: 2px solid var(--lcars-bluey);
+  outline: 2px solid var(--lcars-text-accent);
   outline-offset: 2px;
 }
 
 .nb-btn:disabled {
   cursor: not-allowed;
   background: var(--lcars-track);
-  color: var(--lcars-almond);
+  color: var(--lcars-muted);
   filter: none;
 }
 
@@ -331,7 +379,7 @@ textarea {
    with coloured lettering. */
 .nb-btn--invert {
   --lcars-btn: var(--lcars-bg);
-  color: var(--lcars-frame);
+  color: var(--lcars-text-accent);
   box-shadow: inset 0 0 0 2px var(--lcars-frame);
 }
 
@@ -370,8 +418,8 @@ textarea {
 }
 
 .nb-input::placeholder {
-  color: var(--lcars-almond);
-  opacity: 0.7;
+  color: var(--lcars-muted);
+  opacity: 1;
   text-transform: uppercase;
 }
 
@@ -381,7 +429,7 @@ textarea {
   font-size: 0.85rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--lcars-frame);
+  color: var(--lcars-text-accent);
   margin-bottom: 0.35em;
 }
 
@@ -414,7 +462,7 @@ textarea {
 }
 
 .nb-toggle input:focus-visible {
-  outline: 2px solid var(--lcars-bluey);
+  outline: 2px solid var(--lcars-text-accent);
   outline-offset: 2px;
 }
 
@@ -453,8 +501,8 @@ textarea {
   background: repeating-linear-gradient(
     90deg,
     var(--lcars-frame) 0 15px,
-    var(--lcars-barley) 15px 30px,
-    var(--lcars-african-violet) 30px 45px
+    var(--lcars-b3) 15px 30px,
+    var(--lcars-b2) 30px 45px
   );
   -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 11px, transparent 11px 15px);
   mask-image: repeating-linear-gradient(90deg, #000 0 11px, transparent 11px 15px);
@@ -464,9 +512,9 @@ textarea {
 .nb-progress--dark .nb-progress__fill {
   background: repeating-linear-gradient(
     90deg,
-    var(--lcars-bluey) 0 15px,
-    var(--lcars-lilac) 15px 30px,
-    var(--lcars-true-mauve) 30px 45px
+    var(--lcars-b4) 0 15px,
+    var(--lcars-cap) 15px 30px,
+    var(--lcars-b5) 30px 45px
   );
 }
 
@@ -477,7 +525,7 @@ textarea {
 .nb-tag {
   display: inline-block;
   background: var(--lcars-bg);
-  color: var(--lcars-african-violet);
+  color: var(--lcars-text);
   border: 2px solid currentColor;
   border-radius: 999px;
   padding: 0.05em 0.7em;
@@ -496,9 +544,9 @@ textarea {
     90deg,
     var(--lcars-frame) 0 34%,
     transparent 34% 35.5%,
-    var(--lcars-true-mauve) 35.5% 62%,
+    var(--lcars-b5) 35.5% 62%,
     transparent 62% 63.5%,
-    var(--lcars-bluey) 63.5% 100%
+    var(--lcars-b4) 63.5% 100%
   );
   margin: 0.9rem 0;
 }
@@ -533,7 +581,7 @@ textarea {
   align-items: center;
   justify-content: center;
   background: var(--lcars-bg);
-  color: var(--lcars-frame);
+  color: var(--lcars-text-accent);
   font-family: var(--nb-font);
   font-size: 1.2rem;
   letter-spacing: 0.12em;
@@ -552,8 +600,8 @@ textarea {
   gap: 0.6rem;
   /* Translucent, and click-through: the structure stays visible and
      draggable while a volume grid is still loading. */
-  background: rgba(0, 0, 0, 0.55);
-  color: var(--lcars-frame);
+  background: var(--lcars-scrim);
+  color: var(--lcars-text-accent);
   font-family: var(--nb-font);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -615,7 +663,7 @@ textarea {
 
 .nb-hand__value {
   font-size: 0.95rem;
-  color: var(--lcars-frame);
+  color: var(--lcars-text-accent);
 }
 
 .nb-hand__label {

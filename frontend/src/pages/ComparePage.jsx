@@ -149,7 +149,7 @@ export default function ComparePage() {
           {error && (
             <p
               className="nb-mono"
-              style={{ fontSize: "0.72rem", border: "2px solid var(--lcars-lilac)", padding: "0.5em", margin: 0 }}
+              style={{ fontSize: "0.72rem", border: "2px solid var(--lcars-b6)", padding: "0.5em", margin: 0 }}
             >
               ERROR: {error}
             </p>

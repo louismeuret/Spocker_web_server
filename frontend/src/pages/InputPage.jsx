@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createJob, listExamples, listPdbChains } from "../api";
 import { addRecentJob, getRecentJobs } from "../recentJobs";
+import { getTheme, setTheme } from "../theme";
 
 const ACCEPTED = ".pdb,.ent,.cif";
 const PDB_CODE_RE = /^[0-9][A-Za-z0-9]{3}$/;
@@ -19,6 +20,12 @@ const PIPELINE_GRID_A = 0.25;
 const POCKET_MODES = [
   { value: "fluid", label: "Fluid" },
   { value: "sphere", label: "Sphere" },
+];
+
+// The two palettes in index.css.
+const THEMES = [
+  { value: "dark", label: "Classic" },
+  { value: "light", label: "Starlight" },
 ];
 
 export default function InputPage() {
@@ -40,6 +47,8 @@ export default function InputPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [displayDownscale, setDisplayDownscale] = useState(DEFAULT_DOWNSCALE);
   const [pocketMode, setPocketMode] = useState("fluid");
+  // Mirrors <html data-theme>, which is the actual source of truth.
+  const [theme, setThemeState] = useState(getTheme);
   // "" means every chain, which is both the default and what an uploaded
   // file always gets (the picker is only offered for PDB codes).
   const [chain, setChain] = useState("");
@@ -144,7 +153,7 @@ export default function InputPage() {
             </p>
 
             {showSettings && (
-              <div style={{ border: "2px solid var(--lcars-lilac)", borderRadius: "0.35rem", padding: "0.75rem", marginTop: "1rem" }}>
+              <div style={{ border: "2px solid var(--lcars-b6)", borderRadius: "0.35rem", padding: "0.75rem", marginTop: "1rem" }}>
                 <label className="nb-label" htmlFor="downscale-input">
                   Viewer grid resolution
                 </label>
@@ -189,6 +198,31 @@ export default function InputPage() {
                   Fluid pockets follow the shape of the hotspots; sphere
                   pockets are built from spheres around them.
                 </p>
+
+                <label className="nb-label" htmlFor="theme-input" style={{ marginTop: "0.9rem" }}>
+                  Theme
+                </label>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {THEMES.map((t, i) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      id={i === 0 ? "theme-input" : undefined}
+                      className={`nb-btn nb-btn--sm ${theme === t.value ? "is-pressed" : ""}`}
+                      style={{ flex: 1 }}
+                      onClick={() => {
+                        setTheme(t.value);
+                        setThemeState(t.value);
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="nb-mono" style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: "0.4rem", marginBottom: 0 }}>
+                  Starlight is the Picard-era light palette; Classic is the
+                  TNG black-and-orange one. Remembered on this browser.
+                </p>
               </div>
             )}
 
@@ -227,7 +261,7 @@ export default function InputPage() {
                     textAlign: "center",
                     cursor: "pointer",
                     background: dragOver ? "var(--lcars-frame)" : "transparent",
-                    color: dragOver ? "var(--lcars-ink)" : "var(--lcars-frame)",
+                    color: dragOver ? "var(--lcars-ink)" : "var(--lcars-text-accent)",
                     marginTop: "1rem",
                     marginBottom: "1rem",
                   }}

@@ -1,4 +1,12 @@
 import { pocketVolumeUrl, pocketFieldVolumeUrl } from "../api";
+
+/** The current theme's page colour, for the Mol* canvas -- which takes a
+ *  hex string, not a CSS variable. Read per scene build so it is right
+ *  whichever theme is active. */
+export function themeBackground() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--lcars-bg").trim();
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : "#000000";
+}
 import { FIELD_COLORS, FIELD_ISOVALUES, DEFAULT_FIELD_ISOVALUE } from "../fieldMeta";
 
 // Stable MVS ref for each field-preview isosurface representation node, so
@@ -71,7 +79,7 @@ export function buildMvsState(molstarLib, opts) {
   const { createBuilder } = molstarLib.extensions.mvs;
 
   const builder = createBuilder();
-  builder.canvas({ background_color: "#000000" });
+  builder.canvas({ background_color: themeBackground() });
 
   const structure = builder.download({ url: structureUrl }).parse({ format }).modelStructure();
 

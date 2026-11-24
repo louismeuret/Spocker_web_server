@@ -11,6 +11,12 @@
       href="https://fonts.googleapis.com/css2?family=Antonio:wght@300;400;600&display=swap"
     />
     <title>Spocker</title>
+    <script>
+      try {
+        if (localStorage.getItem("spocker.theme") === "light")
+          document.documentElement.dataset.theme = "light";
+      } catch (e) {} // localStorage blocked: fall through to the default theme
+    </script>
   </head>
   <body>
     <div id="root"></div>
